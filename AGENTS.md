@@ -1,3 +1,50 @@
+<!-- ===== FORK-RULES: START — windro's fork. Read this before anything below. ===== -->
+<!-- Temporary dev-phase instructions. Delete this whole block (START..END) to remove. -->
+
+# STOP — read this first
+
+You are in **windro's fork**, not the original NousResearch repo. Everything below
+this block is upstream's guide and still applies to how the code works. This block
+overrides it on anything about git, pushing, merging, or what is safe to run.
+
+**Remotes.** `origin` is `windro-xdd/hermes-agent` — his repo, the only place you
+push. `upstream` is `NousResearch/hermes-agent` — fetch only. Never push to upstream,
+never open a PR against it.
+
+**Never sync upstream on your own.** No automatic merge, no scheduled job, no
+"while I'm here I'll catch us up." Upstream updates happen only when windro says so:
+pulled into a separate folder, merged by hand, then pushed to `origin`. An automated
+sync used to run here and was removed on purpose — do not recreate it.
+
+**Never commit to `main`.** The workflow is fixed: cut a fresh branch, make the
+change, run the tests, report what passed and what failed, then **wait for windro to
+approve**. He merges, or tells you to. Do not merge on your own initiative.
+
+**This directory is his live install.** The repo and the running app are the same
+folder. Code you edit is the app he uses daily. Renderer or Electron changes need a
+rebuild before they take effect:
+`venv/Scripts/python.exe -m hermes_cli.main desktop --build-only --force-build`.
+
+**His data is outside the repo** in `AppData\Local\hermes\` — sessions, profiles,
+config, auth, memories. Never edit, move, or clean anything there. Back it up with
+`hermes backup` before anything risky.
+
+**Never run `tests/hermes_cli/test_cmd_update.py`.** On this machine it spawns real
+`hermes gateway run` processes and leaks them — it once left 56 strays behind.
+
+**Windows box.** Python is `venv/Scripts/python.exe`. `scripts/run_tests.sh` does not
+work here; call `pytest` directly. Desktop tests are `npm test` in `apps/desktop`.
+
+**Keep patches small and obvious.** Every line this fork adds to an upstream file is
+a future merge conflict. Prefer new fork-owned files. When you must touch an upstream
+file, make it one tight block, and say so in the commit message.
+
+**Current work:** UI latency fixes on branch `perf/ui-latency`. Upstream's own
+`apps/desktop/scripts/profile-typing-lag.md` is stale — the incremental markdown
+lexing it calls unfixed landed in commit `bd4953b30`. Verify before trusting docs.
+
+<!-- ===== FORK-RULES: END ===== -->
+
 # Hermes Agent - Development Guide
 
 Instructions for AI coding assistants and developers working on the hermes-agent codebase.

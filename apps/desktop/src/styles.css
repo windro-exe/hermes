@@ -1325,13 +1325,40 @@ text-* variant utilities. */ .btn-arc {
 }
 
 [data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'][data-streaming='true'] {
-  animation:
-    code-card-stream-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both,
-    code-card-stream-glow 1.8s ease-in-out 180ms infinite alternate;
-  border-color: color-mix(in srgb, var(--dt-ring) 24%, var(--ui-stroke-tertiary));
+  animation: code-card-stream-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Dim end of the breathing glow. The bright end lives on ::after and is
+     cross-faded with opacity — see the keyframes below for why. */
+  border-color: color-mix(in srgb, var(--dt-ring) 18%, var(--ui-stroke-tertiary));
   box-shadow:
-    0 0 0 0.0625rem color-mix(in srgb, var(--dt-ring) 10%, transparent),
-    0 0.625rem 1.75rem color-mix(in srgb, var(--dt-ring) 8%, transparent);
+    0 0 0 0.0625rem color-mix(in srgb, var(--dt-ring) 6%, transparent),
+    0 0.5rem 1.5rem color-mix(in srgb, var(--dt-ring) 5%, transparent);
+}
+
+/* Bright end of the streaming glow, faded in and out by animating opacity.
+   `box-shadow` and `border-color` cannot be animated on the compositor: every
+   frame repaints the card and its shadow region, and each frame also re-resolves
+   four `color-mix()` calls. This animation is `infinite alternate` and runs
+   WHILE the code block streams, so it was repainting continuously during the
+   busiest moment in the UI. Opacity on a promoted layer is compositor-only, so
+   the same visual costs no repaints.
+
+   `inset: -0.0625rem` (the card's border width) makes this element's border box
+   line up with the card's outer edge, so its border overlays the card's own
+   border ring rather than sitting inside it as a second line. */
+[data-slot='aui_assistant-message-content']
+  .aui-md
+  [data-slot='code-card'][data-streaming='true']::after {
+  animation: code-card-stream-glow 1.8s ease-in-out 180ms infinite alternate;
+  border: 0.0625rem solid color-mix(in srgb, var(--dt-ring) 32%, var(--ui-stroke-tertiary));
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 0.0625rem color-mix(in srgb, var(--dt-ring) 12%, transparent),
+    0 0.75rem 2rem color-mix(in srgb, var(--dt-ring) 10%, transparent);
+  content: '';
+  inset: -0.0625rem;
+  pointer-events: none;
+  position: absolute;
+  will-change: opacity;
 }
 
 [data-slot='aui_assistant-message-content']
@@ -1627,25 +1654,34 @@ text-* variant utilities. */ .btn-arc {
   }
 }
 
+/* Cross-fade between the dim glow on the card and the bright glow on its
+   ::after. Was two paint-only properties (border-color + box-shadow) animating
+   at 60fps for the whole duration of a streaming code block; now one
+   compositor-only property. The dim and bright values moved to the two rules
+   above — keep them in sync with this pair if either end is retuned. */
 @keyframes code-card-stream-glow {
   from {
-    border-color: color-mix(in srgb, var(--dt-ring) 18%, var(--ui-stroke-tertiary));
-    box-shadow:
-      0 0 0 0.0625rem color-mix(in srgb, var(--dt-ring) 6%, transparent),
-      0 0.5rem 1.5rem color-mix(in srgb, var(--dt-ring) 5%, transparent);
+    opacity: 0;
   }
 
   to {
-    border-color: color-mix(in srgb, var(--dt-ring) 32%, var(--ui-stroke-tertiary));
-    box-shadow:
-      0 0 0 0.0625rem color-mix(in srgb, var(--dt-ring) 12%, transparent),
-      0 0.75rem 2rem color-mix(in srgb, var(--dt-ring) 10%, transparent);
+    opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'][data-streaming='true'] {
     animation: none;
+  }
+
+  /* The breathing glow moved to ::after, so it needs its own opt-out — the rule
+     above only reaches the card itself. Held at the bright end so a streaming
+     block still reads as active without any motion. */
+  [data-slot='aui_assistant-message-content']
+    .aui-md
+    [data-slot='code-card'][data-streaming='true']::after {
+    animation: none;
+    opacity: 1;
   }
 }
 

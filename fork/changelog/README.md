@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-07-27 | Performance | [Code-card glow: opacity cross-fade instead of box-shadow](entries/2026-07-27-06-code-card-glow.md) | current |
 | 2026-07-27 | Performance | [Streaming renderer: visibleGroups + content-text memo (three claims rejected)](entries/2026-07-27-05-streaming-renderer.md) | current |
 | 2026-07-27 | Performance | [Model picker: memoize credential-pool reads, warm caches at startup](entries/2026-07-27-04-model-picker-latency.md) | current |
 | 2026-07-27 | Performance | [Gateway RPC latency: pool session.history, compact project-tree rows](entries/2026-07-27-03-gateway-rpc-latency.md) | current |

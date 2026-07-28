@@ -91,6 +91,35 @@ describe('messageContentText memo', () => {
   })
 })
 
+describe('code-card streaming glow is compositor-only', () => {
+  it('animates opacity, not box-shadow or border-color', async () => {
+    // The glow runs `infinite alternate` for the whole duration of a streaming
+    // code block. Animating box-shadow/border-color repaints the card every
+    // frame during the busiest moment in the UI; opacity on the ::after is
+    // compositor-only. Guarding the keyframe body because the whole point is the
+    // property being animated, and nothing else fails if it regresses.
+    const css = await import('node:fs').then(fs => fs.readFileSync('src/styles.css', 'utf8'))
+
+    const match = css.match(/@keyframes code-card-stream-glow \{([\s\S]*?)\n\}/)
+
+    expect(match, 'code-card-stream-glow keyframes not found — renamed?').toBeTruthy()
+
+    const body = match?.[1] ?? ''
+
+    expect(
+      body.includes('opacity'),
+      'code-card-stream-glow no longer animates opacity — it likely reverted to ' +
+        'animating box-shadow/border-color, which repaints every frame while a ' +
+        'code block streams. See fork/changelog/entries/.'
+    ).toBe(true)
+    expect(
+      body.includes('box-shadow') || body.includes('border-color'),
+      'code-card-stream-glow is back to animating a paint property (box-shadow / ' +
+        'border-color). Keep the breathing on opacity via the ::after layer.'
+    ).toBe(false)
+  })
+})
+
 describe('thread list visibleGroups identity', () => {
   it('is memoized on groups and hiddenCount', async () => {
     // Source-level guard: the value feeds a useMemo dependency array, so a fresh

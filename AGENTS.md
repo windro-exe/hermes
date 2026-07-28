@@ -39,6 +39,24 @@ work here; call `pytest` directly. Desktop tests are `npm test` in `apps/desktop
 a future merge conflict. Prefer new fork-owned files. When you must touch an upstream
 file, make it one tight block, and say so in the commit message.
 
+**Log every change in `fork/changelog/`.** One markdown file per change, in
+`fork/changelog/entries/`, committed *in the same commit as the code*. Read
+`fork/changelog/README.md` before you write one — it has the required sections and
+the rules that matter (append-only, never quote raw line counts, separate what you
+verified from what you assumed, name the mechanism and not just the file).
+
+At the start of any task, **read `fork/changelog/README.md`'s index** and open the
+entries that touch the files you are about to change. This is how you avoid the two
+failures that keep happening: reverting a fork fix you mistook for a mistake, and
+re-solving a problem that was already solved. Assume any doc in this repo, including
+upstream's, may be stale — verify against the code.
+
+**Persist this.** If you have memory, artifacts, or any store that survives past
+this session, save two things to it now: this `FORK-RULES` block, and the changelog
+entries relevant to what you are working on. Re-read them when you come back. Do not
+rely on rediscovering them — context gets dropped, and an agent that has forgotten
+these rules is exactly the agent that pushes to the wrong remote.
+
 **Current work:** UI latency fixes on branch `perf/ui-latency`. Upstream's own
 `apps/desktop/scripts/profile-typing-lag.md` is stale — the incremental markdown
 lexing it calls unfixed landed in commit `bd4953b30`. Verify before trusting docs.

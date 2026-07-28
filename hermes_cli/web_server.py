@@ -218,6 +218,27 @@ async def _lifespan(app: "FastAPI"):
         )
         cron_thread.start()
 
+    # Warm the model picker's caches off-thread while the socket is already
+    # accepting. GET /api/model/options (the REST mirror of the model.options
+    # JSON-RPC, used by the Desktop model pill and picker) calls
+    # build_model_options_payload, whose first call in a process pays module
+    # imports plus a credential-pool scan across every registry provider —
+    # measured ~1.1s cold against ~0.09s warm on a real config. Doing it here
+    # means the user's first picker open lands on warm caches.
+    #
+    # Same helper the CLI and the stdio gateway use; it is guarded to run at
+    # most once per process and swallows all errors, so a slow or offline
+    # provider cannot delay startup or fail a request.
+    def _warm_picker_cache() -> None:
+        try:
+            from hermes_cli.model_switch import prewarm_picker_cache_async
+
+            prewarm_picker_cache_async()
+        except Exception:
+            _log.debug("picker cache prewarm failed", exc_info=True)
+
+    asyncio.get_event_loop().run_in_executor(None, _warm_picker_cache)
+
     # Reap idle/dead keep-alive PTY sessions in the background (30-min TTL).
     pty_reaper_task = asyncio.create_task(run_reaper(PTY_REGISTRY))
 

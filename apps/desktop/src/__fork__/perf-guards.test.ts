@@ -120,6 +120,39 @@ describe('code-card streaming glow is compositor-only', () => {
   })
 })
 
+describe('use-stick-to-bottom patch (scroll getComputedStyle)', () => {
+  // The patch removes per-frame getComputedStyle from the scrollTop setter and
+  // the per-wheel-event getComputedStyle walk. It lives in a patch-package file
+  // (node_modules is gitignored), reapplied by the root postinstall. If either
+  // the patch file or the postinstall wiring is lost on a merge, scroll jank
+  // returns silently — nothing else fails. Hence these guards.
+  const readRoot = (rel: string) =>
+    import('node:fs').then(fs => fs.readFileSync(`../../${rel}`, 'utf8'))
+
+  it('the patch file exists and covers both getComputedStyle sites', async () => {
+    const patch = await readRoot('patches/use-stick-to-bottom+1.1.6.patch').catch(() => '')
+
+    expect(patch, 'patches/use-stick-to-bottom+1.1.6.patch is missing').toBeTruthy()
+    // The setter cache and the wheel short-circuit are the two edits.
+    expect(patch.includes('__hermesScrollBehaviorCache')).toBe(true)
+    expect(patch.includes('scrollRef.current ?? target')).toBe(true)
+  })
+
+  it('the root postinstall runs patch-package', async () => {
+    const pkg = JSON.parse(await readRoot('package.json'))
+
+    expect(
+      String(pkg.scripts?.postinstall ?? '').includes('patch-package'),
+      'root postinstall no longer runs patch-package — the scroll patch (and any ' +
+        'future dep patch) will not survive npm install. See fork/changelog/entries/.'
+    ).toBe(true)
+    expect(
+      Object.keys(pkg.devDependencies ?? {}).includes('patch-package'),
+      'patch-package is no longer a root devDependency.'
+    ).toBe(true)
+  })
+})
+
 describe('thread list visibleGroups identity', () => {
   it('is memoized on groups and hiddenCount', async () => {
     // Source-level guard: the value feeds a useMemo dependency array, so a fresh

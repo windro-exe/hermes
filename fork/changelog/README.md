@@ -118,7 +118,8 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
-| 2026-07-27 | Docs | [Scroll-library getComputedStyle — real, blocked on a patch-package decision](entries/2026-07-27-09-scroll-getcomputedstyle-investigation.md) | current |
+| 2026-07-27 | Performance | [Scroll jank fixed: patch-package + use-stick-to-bottom getComputedStyle removal](entries/2026-07-27-10-scroll-patch-applied.md) | current |
+| 2026-07-27 | Docs | [Scroll-library getComputedStyle — real, blocked on a patch-package decision](entries/2026-07-27-09-scroll-getcomputedstyle-investigation.md) | superseded by 10 |
 | 2026-07-27 | Docs | [Bundle splitting investigated — no change, wrong optimization for local-disk Electron](entries/2026-07-27-08-bundle-investigation.md) | current |
 | 2026-07-27 | Docs | [Session-load path investigated — no change, claims already done or unsafe](entries/2026-07-27-07-session-load-investigation.md) | current |
 | 2026-07-27 | Performance | [Code-card glow: opacity cross-fade instead of box-shadow](entries/2026-07-27-06-code-card-glow.md) | current |

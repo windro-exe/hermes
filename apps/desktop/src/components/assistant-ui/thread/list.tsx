@@ -248,7 +248,17 @@ const ThreadMessageListInner: FC<ThreadMessageListProps> = ({
   }, [groups, weightSignature])
 
   const hiddenCount = firstVisibleGroupIndex(weightedGroups, renderBudget)
-  const visibleGroups = hiddenCount > 0 ? groups.slice(hiddenCount) : groups
+  // Memoized because `groups.slice()` returns a fresh array on every render,
+  // and `visibleGroups` is a dependency of the rendered-children useMemo below.
+  // Unmemoized, any render re-ran that memo and rebuilt every group element —
+  // but only once the render budget actually hides something, i.e. exactly on
+  // the long transcripts where the rebuild is most expensive. The
+  // `hiddenCount === 0` path already returned the stable `groups` reference,
+  // which is why this only bites past the budget.
+  const visibleGroups = useMemo(
+    () => (hiddenCount > 0 ? groups.slice(hiddenCount) : groups),
+    [groups, hiddenCount]
+  )
   const restoreFromBottomRef = useRef<number | null>(null)
   // Secondary windows (new-session scratch, subagent watch, cmd-click pop-out)
   // hide the titlebar tool cluster + session header, but the OS traffic lights

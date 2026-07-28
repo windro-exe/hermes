@@ -14,12 +14,45 @@ export function partText(part: unknown): string {
   return (!row.type || row.type === 'text') && typeof row.text === 'string' ? row.text : ''
 }
 
+// Memo for messageContentText's array path. This runs inside useAuiState
+// selectors, which re-execute on every store notification — so for a settled
+// message the whole transcript re-concatenated its text on notifications that
+// had nothing to do with it. Streaming is already guarded at the call site
+// (AssistantMessage returns '' while status is 'running'), so the win here is on
+// settled messages in a long transcript.
+//
+// Keyed on the array reference, which is stable for a settled message. The
+// stored length pair is a cheap guard against in-place growth: if a part is
+// appended, or the last part's text grows, the key no longer matches and we
+// recompute. WeakMap so nothing is retained after a message is dropped.
+const contentTextMemo = new WeakMap<object, { lastLength: number; parts: number; text: string }>()
+
+function lastPartLength(content: readonly unknown[]): number {
+  return content.length === 0 ? 0 : partText(content[content.length - 1]).length
+}
+
 export function messageContentText(content: unknown): string {
   if (typeof content === 'string') {
     return content.trim()
   }
 
-  return Array.isArray(content) ? content.map(partText).join('').trim() : ''
+  if (!Array.isArray(content)) {
+    return ''
+  }
+
+  const cached = contentTextMemo.get(content)
+  const parts = content.length
+  const lastLength = lastPartLength(content)
+
+  if (cached && cached.parts === parts && cached.lastLength === lastLength) {
+    return cached.text
+  }
+
+  const text = content.map(partText).join('').trim()
+
+  contentTextMemo.set(content, { lastLength, parts, text })
+
+  return text
 }
 
 // Cheap streaming-stable "does this message have visible text" check: returns

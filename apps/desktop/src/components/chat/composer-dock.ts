@@ -8,9 +8,18 @@ import { cn } from '@/lib/utils'
 export const composerFill = 'bg-(--composer-fill)'
 
 /** Backdrop treatment for the composer input surface. Harmless when the fill
- *  goes opaque (drawer open) — nothing shows through to blur. */
+ *  goes opaque (drawer open) — nothing shows through to blur.
+ *
+ *  The blur radius comes from `--composer-glass-blur`, set on the document root
+ *  by store/composer-glass.ts from the Appearance → Composer glass lever. At
+ *  lever 0 the var is `0`, which makes the filter a no-op — worth having,
+ *  because blurring the backdrop over the transcript means re-sampling that
+ *  region whenever content behind it changes, i.e. on every streaming flush.
+ *  The default lives in styles.css `:root` so the var is always defined (no
+ *  comma-fallback inside the arbitrary value, which Tailwind would mangle). */
 export const composerSurfaceGlass = cn(
-  'backdrop-blur-[0.75rem] backdrop-saturate-[1.12] [-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
+  'backdrop-blur-(--composer-glass-blur) backdrop-saturate-[1.12]',
+  '[-webkit-backdrop-filter:blur(var(--composer-glass-blur))_saturate(1.12)]',
   'transition-[background-color] duration-150 ease-out'
 )
 

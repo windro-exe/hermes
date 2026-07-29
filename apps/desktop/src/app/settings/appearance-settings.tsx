@@ -13,6 +13,7 @@ import { selectableCardClass } from '@/lib/selectable-card'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { $backdrop, setBackdrop } from '@/store/backdrop'
+import { $composerGlass, setComposerGlass } from '@/store/composer-glass'
 import { $embedAllowed, $embedMode, clearEmbedAllowed, type EmbedMode, setEmbedMode } from '@/store/embed-consent'
 import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/profile'
 import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
@@ -249,6 +250,7 @@ export function AppearanceSettings() {
   const embedMode = useStore($embedMode)
   const embedAllowed = useStore($embedAllowed)
   const translucency = useStore($translucency)
+  const composerGlass = useStore($composerGlass)
   const backdrop = useStore($backdrop)
   const installs = useStore($marketplaceInstalls)
   const profiles = useStore($profiles)
@@ -451,6 +453,32 @@ export function AppearanceSettings() {
             }
             description={a.translucencyDesc}
             title={a.translucencyTitle}
+          />
+
+          <ListRow
+            action={
+              <div className="flex items-center gap-3">
+                <input
+                  aria-label={a.composerGlassTitle}
+                  className="h-1 w-40 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-tertiary)"
+                  max={100}
+                  min={0}
+                  onChange={event => {
+                    triggerHaptic('selection')
+                    setComposerGlass(Number(event.target.value))
+                  }}
+                  step={5}
+                  style={{ accentColor: 'var(--dt-primary)' }}
+                  type="range"
+                  value={composerGlass}
+                />
+                <span className="w-9 text-right text-[length:var(--conversation-caption-font-size)] tabular-nums text-(--ui-text-tertiary)">
+                  {composerGlass}%
+                </span>
+              </div>
+            }
+            description={a.composerGlassDesc}
+            title={a.composerGlassTitle}
           />
 
           <ListRow

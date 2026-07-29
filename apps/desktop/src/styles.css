@@ -1258,14 +1258,25 @@ text-* variant utilities. */ .btn-arc {
 :root {
   /* Fallback for drawers outside the main composer (e.g. edit-message). */
   --composer-fill: color-mix(in srgb, var(--dt-card) 90%, var(--dt-background));
+
+  /* Composer glass, driven by the Appearance → Composer glass lever
+     (store/composer-glass.ts sets these three on the document root). The values
+     here are the defaults for lever position 30: more opaque than the old
+     hard-coded 72%/48% pair, with a slightly stronger blur so the surface still
+     reads as frosted glass. At lever 0 both strengths reach 100% and the blur
+     becomes 0, which switches the backdrop-filter off entirely — the cheapest
+     and most readable setting. */
+  --composer-fill-strength: 86.50%;
+  --composer-fill-strength-scrolled: 79.30%;
+  --composer-glass-blur: 0.800rem;
 }
 
 [data-slot='composer-root'] {
-  --composer-fill: color-mix(in srgb, var(--dt-card) 72%, transparent);
+  --composer-fill: color-mix(in srgb, var(--dt-card) var(--composer-fill-strength), transparent);
 }
 
 [data-slot='composer-root'][data-thread-scrolled-up] {
-  --composer-fill: color-mix(in srgb, var(--dt-card) 48%, transparent);
+  --composer-fill: color-mix(in srgb, var(--dt-card) var(--composer-fill-strength-scrolled), transparent);
 }
 
 /* Tool/thinking blocks now live at message-text alignment (no leading

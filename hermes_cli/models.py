@@ -3039,6 +3039,93 @@ def clear_provider_models_cache(provider: Optional[str] = None) -> None:
         pass
 
 
+def _custom_endpoint_cache_key(base_url: str) -> str:
+    """Namespaced cache key for a base-URL-identified endpoint.
+
+    ``cached_provider_model_ids`` keys on a registry provider slug. A custom
+    endpoint has no slug — it is identified only by its URL — so it gets its
+    own ``custom::`` namespace inside the same cache file. The prefix cannot
+    collide with a normalized provider slug.
+    """
+    return "custom::" + str(base_url or "").strip().rstrip("/").lower()
+
+
+def cached_api_models(
+    api_key: Optional[str],
+    base_url: Optional[str],
+    *,
+    force_refresh: bool = False,
+    ttl_seconds: int = _PROVIDER_MODELS_CACHE_TTL,
+    timeout: float = 5.0,
+    api_mode: Optional[str] = None,
+) -> list[str]:
+    """Disk-cached wrapper around :func:`fetch_api_models`.
+
+    Same contract and storage as :func:`cached_provider_model_ids` — fresh
+    cache hit, else live fetch, persist non-empty, prefer a stale entry over an
+    empty result when the network is flaky — but keyed by endpoint URL instead
+    of provider slug.
+
+    This exists because the model picker probes the *current* custom endpoint on
+    every normal open (``probe_current_custom_provider``, which is deliberate:
+    it keeps the live catalogue accurate without touching offline saved
+    endpoints). That probe went straight to the network with no cache, so a slow
+    endpoint charged the user its full latency every single time the picker
+    opened. On the reporting machine the endpoint is a local proxy that relays
+    to a remote provider, and the probe measured ~2.2s of blocking socket read
+    per open.
+
+    The fingerprint folds in the api key so rotating a credential invalidates
+    the entry, mirroring the provider-slug path.
+
+    Always returns a list, never None.
+    """
+    import hashlib
+
+    url = str(base_url or "").strip().rstrip("/")
+    if not url:
+        return []
+
+    key = _custom_endpoint_cache_key(url)
+    # blake2b/digest_size=8 to match _credential_fingerprint's shape.
+    fp = hashlib.blake2b(
+        "\x00".join([url, str(api_key or ""), str(api_mode or "")]).encode("utf-8"),
+        digest_size=8,
+    ).hexdigest()
+
+    cache = _load_provider_models_cache()
+    entry = cache.get(key)
+    now = time.time()
+
+    if (
+        not force_refresh
+        and isinstance(entry, dict)
+        and entry.get("fp") == fp
+        and isinstance(entry.get("models"), list)
+        and entry["models"]
+        and (now - float(entry.get("at", 0))) < ttl_seconds
+    ):
+        return list(entry["models"])
+
+    live = fetch_api_models(api_key, url, timeout=timeout, api_mode=api_mode)
+    if live:
+        cache[key] = {"fp": fp, "at": now, "models": list(live)}
+        _save_provider_models_cache(cache)
+        return list(live)
+
+    # Live fetch failed or returned nothing — stale beats empty, same as the
+    # provider-slug path, so a picker open during a network blip still lists
+    # the models the user had a minute ago.
+    if (
+        isinstance(entry, dict)
+        and entry.get("fp") == fp
+        and isinstance(entry.get("models"), list)
+        and entry["models"]
+    ):
+        return list(entry["models"])
+    return list(live or [])
+
+
 def _fetch_anthropic_models(
     timeout: float = 5.0,
     *,

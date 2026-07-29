@@ -615,12 +615,29 @@ export function getSession(id: string, profile?: string | null): Promise<Session
 // this GET to the remote backend (which serves its own state.db); for a local
 // profile the primary opens that profile's state.db via ?profile=. Omit for
 // the current/default profile.
-export function getSessionMessages(id: string, profile?: string | null): Promise<SessionMessagesResponse> {
-  const suffix = profile ? `?profile=${encodeURIComponent(profile)}` : ''
+// `fields` requests a column projection (comma-joined) so callers that only need
+// a few columns — the artifacts scan needs role/content/tool_calls/timestamp —
+// don't pull whole transcripts. Omit it to get every column (resume, tiles).
+export function getSessionMessages(
+  id: string,
+  profile?: string | null,
+  fields?: readonly string[]
+): Promise<SessionMessagesResponse> {
+  const params = new URLSearchParams()
+
+  if (profile) {
+    params.set('profile', profile)
+  }
+
+  if (fields && fields.length > 0) {
+    params.set('fields', fields.join(','))
+  }
+
+  const query = params.toString()
 
   return window.hermesDesktop.api<SessionMessagesResponse>({
     ...(profile ? { profile } : {}),
-    path: `/api/sessions/${encodeURIComponent(id)}/messages${suffix}`
+    path: `/api/sessions/${encodeURIComponent(id)}/messages${query ? `?${query}` : ''}`
   })
 }
 

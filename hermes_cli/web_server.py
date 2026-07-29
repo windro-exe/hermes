@@ -218,6 +218,27 @@ async def _lifespan(app: "FastAPI"):
         )
         cron_thread.start()
 
+    # Warm the model picker's caches off-thread while the socket is already
+    # accepting. GET /api/model/options (the REST mirror of the model.options
+    # JSON-RPC, used by the Desktop model pill and picker) calls
+    # build_model_options_payload, whose first call in a process pays module
+    # imports plus a credential-pool scan across every registry provider —
+    # measured ~1.1s cold against ~0.09s warm on a real config. Doing it here
+    # means the user's first picker open lands on warm caches.
+    #
+    # Same helper the CLI and the stdio gateway use; it is guarded to run at
+    # most once per process and swallows all errors, so a slow or offline
+    # provider cannot delay startup or fail a request.
+    def _warm_picker_cache() -> None:
+        try:
+            from hermes_cli.model_switch import prewarm_picker_cache_async
+
+            prewarm_picker_cache_async()
+        except Exception:
+            _log.debug("picker cache prewarm failed", exc_info=True)
+
+    asyncio.get_event_loop().run_in_executor(None, _warm_picker_cache)
+
     # Reap idle/dead keep-alive PTY sessions in the background (30-min TTL).
     pty_reaper_task = asyncio.create_task(run_reaper(PTY_REGISTRY))
 
@@ -11835,7 +11856,19 @@ async def get_session_messages(
     profile: Optional[str] = None,
     limit: Optional[int] = None,
     offset: int = 0,
+    fields: Optional[str] = None,
 ):
+    # ``fields`` is an optional comma-separated column projection. The artifacts
+    # page uses it to fetch only role/content/tool_calls/timestamp across many
+    # sessions instead of full transcripts — the columns its extractor actually
+    # reads — cutting each response substantially. get_messages whitelists the
+    # names against real columns, so an unknown or malicious name is simply
+    # dropped. Omitted (the default) returns every column, unchanged for the
+    # resume prefetch and every other caller.
+    field_list = (
+        [f.strip() for f in fields.split(",") if f.strip()] if fields else None
+    )
+
     def _read():
         db = _open_session_db_for_profile(profile)
         try:
@@ -11845,7 +11878,9 @@ async def get_session_messages(
             sid = db.resolve_resume_session_id(sid)
             # Clamp limit to prevent abuse (max 500 per page)
             _limit = min(limit, 500) if limit is not None else None
-            return sid, _limit, db.get_messages(sid, limit=_limit, offset=offset)
+            return sid, _limit, db.get_messages(
+                sid, limit=_limit, offset=offset, fields=field_list
+            )
         finally:
             db.close()
 

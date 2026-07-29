@@ -439,6 +439,9 @@ export const en: Translations = {
         `Scales text and controls across the whole app. Cmd/Ctrl with +, - and 0 also works. Current: ${percent}%.`,
       translucencyTitle: 'Window Translucency',
       translucencyDesc: 'See your desktop through the whole window. macOS and Windows only.',
+      composerGlassTitle: 'Composer Glass',
+      composerGlassDesc:
+        'How much the message box lets the conversation show through, and how hard it blurs it. 0 is solid — most readable, and skips the blur entirely while a reply streams.',
       backdropTitle: 'Chat Backdrop',
       backdropDesc: 'The faint statue image behind the conversation.',
       embedsTitle: 'Inline Embeds',

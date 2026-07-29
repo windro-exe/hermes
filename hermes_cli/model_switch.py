@@ -1623,6 +1623,26 @@ import threading as _threading  # noqa: E402
 _picker_prewarm_done = _threading.Event()
 
 
+# Per-build memo for _credential_pool_is_usable. One picker payload asks the
+# same question about the same provider several times — measured 78 calls across
+# 41 distinct providers on a real config, so 37 were pure repeats — and every
+# call runs load_pool(), which re-reads and re-parses auth.json from disk. That
+# showed up as 193ms of the ~560ms payload build, with 90 auth-store reads.
+#
+# Scoped deliberately to a single list_authenticated_providers() call and kept
+# in thread-local storage: a build cannot observe its own auth state changing
+# mid-flight, and nothing is cached across builds, so an `auth add` or an
+# exhausted credential is visible on the very next picker open. Thread-local
+# also means concurrent builds on the gateway's RPC pool cannot clear or read
+# each other's memo.
+_pool_usable_memo = _threading.local()
+
+
+def _reset_credential_pool_memo() -> None:
+    """Start a fresh memo scope. Called once per payload build."""
+    _pool_usable_memo.cache = {}
+
+
 def _credential_pool_is_usable(provider: str, *, raw_pool_present: bool = False) -> bool:
     """Return whether *provider* has a credential that can be selected now.
 
@@ -1630,16 +1650,27 @@ def _credential_pool_is_usable(provider: str, *, raw_pool_present: bool = False)
     not deserialize into ``PooledCredential`` entries. Preserve visibility for
     those legacy values, but when a real pool exists its availability state is
     authoritative: an all-exhausted/dead pool is not authenticated.
+
+    Memoized for the duration of one payload build — see ``_pool_usable_memo``.
     """
+    cache = getattr(_pool_usable_memo, "cache", None)
+    key = (provider, bool(raw_pool_present))
+    if cache is not None and key in cache:
+        return cache[key]
+
+    result = raw_pool_present
     try:
         from agent.credential_pool import load_pool
 
         pool = load_pool(provider)
         if pool.has_credentials():
-            return pool.has_available()
+            result = pool.has_available()
     except Exception:
         pass
-    return raw_pool_present
+
+    if cache is not None:
+        cache[key] = result
+    return result
 
 
 def _extra_headers_from_config(entry: Any) -> dict[str, str]:
@@ -1681,6 +1712,15 @@ def prewarm_picker_cache_async() -> Optional["_threading.Thread"]:
             # Calling this is what populates cached_provider_model_ids() ->
             # provider_models_cache.json for each authed provider. We discard
             # the result; the side effect (warm disk cache) is the point.
+            #
+            # probe_current_custom_provider=True so the warm covers the current
+            # custom endpoint too. It defaults to False, which meant a user
+            # whose active provider is a custom endpoint got no benefit from the
+            # prewarm at all: every real picker open still paid the live probe.
+            # Blocking here is harmless — this is a fire-and-forget daemon
+            # thread off the user's critical path, and the probe carries its own
+            # timeout. Saved-but-offline endpoints are still left alone
+            # (probe_custom_providers stays False).
             list_authenticated_providers(
                 current_provider=ctx.current_provider,
                 current_base_url=ctx.current_base_url,
@@ -1688,6 +1728,7 @@ def prewarm_picker_cache_async() -> Optional["_threading.Thread"]:
                 user_providers=ctx.user_providers,
                 custom_providers=ctx.custom_providers,
                 excluded_providers=ctx.excluded_providers or [],
+                probe_current_custom_provider=True,
             )
         except Exception:
             # Best-effort warmup — never surface errors into the session.
@@ -1773,6 +1814,9 @@ def list_authenticated_providers(
         except Exception:
             pass
 
+    # Fresh credential-pool memo for this build. Scoped here, not globally, so
+    # auth changes are always visible on the next picker open.
+    _reset_credential_pool_memo()
 
     results: List[dict] = []
     seen_slugs: set = set()  # lowercase-normalized to catch case variants (#9545)
@@ -2544,9 +2588,19 @@ def list_authenticated_providers(
         _models = [current_model] if current_model else []
         if refresh or probe_current_custom_provider:
             try:
-                from hermes_cli.models import fetch_api_models
+                # Disk-cached (1h TTL, keyed by endpoint URL) instead of a raw
+                # fetch. probe_current_custom_provider is true on every normal
+                # picker open, so the uncached call charged the endpoint's full
+                # latency every time the picker was opened — measured ~2.2s of
+                # blocking socket read against a local proxy that relays to a
+                # remote provider. An explicit refresh still forces the network.
+                from hermes_cli.models import cached_api_models
 
-                _live_models = fetch_api_models("", str(current_base_url).strip().rstrip("/"))
+                _live_models = cached_api_models(
+                    "",
+                    str(current_base_url).strip().rstrip("/"),
+                    force_refresh=bool(refresh),
+                )
                 if _live_models:
                     _models = _live_models
             except Exception:

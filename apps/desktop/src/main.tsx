@@ -1,6 +1,10 @@
 import './styles.css'
 // Side-effect: applies the persisted window translucency on load.
 import './store/translucency'
+// Side-effect: applies the persisted composer-glass level on load. nanostores'
+// `subscribe` fires immediately with the current value, so importing this is
+// what writes the CSS vars before first paint.
+import './store/composer-glass'
 // Dev-only render/state churn counters. MUST precede the `react-dom` import
 // below: react-dom captures the devtools hook at module init, so bippy has to
 // install during THIS import's evaluation or every commit goes unseen

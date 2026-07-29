@@ -419,6 +419,23 @@ def main():
     # Live-apply skins Hermes activates mid-conversation.
     server._ensure_skin_watcher()
 
+    # Warm the model picker's provider-models cache off-thread now, in the idle
+    # window between announcing gateway.ready and the first RPC arriving. This
+    # mirrors what the CLI does after printing its banner (see cli.py), and the
+    # gateway needs it more: the Desktop model pill and picker both call
+    # model.options, which probes the current custom endpoint live on every
+    # normal open. Without a warm cache the first open pays that latency in
+    # full — measured ~4s end to end on a setup whose provider is a local proxy
+    # relaying to a remote API. Fire-and-forget, guarded once per process, and
+    # fully exception-isolated: a slow or offline provider cannot affect
+    # startup or any request.
+    try:
+        from hermes_cli.model_switch import prewarm_picker_cache_async
+
+        prewarm_picker_cache_async()
+    except Exception:
+        pass
+
     while True:
         raw = sys.stdin.readline()
         if not raw:

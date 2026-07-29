@@ -428,6 +428,9 @@ export const zh: Translations = {
         `缩放整个应用的文字和界面。也可使用 Cmd/Ctrl 加 +、- 或 0 调整。当前：${percent}%`,
       translucencyTitle: '窗口透明',
       translucencyDesc: '让整个窗口透出桌面。仅支持 macOS 和 Windows。',
+      composerGlassTitle: '输入框玻璃效果',
+      composerGlassDesc:
+        '控制输入框透出对话内容的程度以及背景模糊强度。设为 0 则完全不透明——可读性最佳，并且在回复流式输出时完全跳过模糊处理。',
       backdropTitle: '聊天背景',
       backdropDesc: '对话后方那张淡淡的雕像图片。',
       embedsTitle: '内嵌预览',

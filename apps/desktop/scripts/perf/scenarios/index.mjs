@@ -8,6 +8,10 @@ import keystroke from './keystroke.mjs'
 import multitab from './multitab.mjs'
 import profileSwitch from './profile-switch.mjs'
 import renderChurn from './render-churn.mjs'
+// Fork-added: upstream's `transcript` scenario measures mount cost only, so
+// nothing measured scroll smoothness — the thing that actually feels janky on a
+// long session. See fork/changelog/entries/.
+import scroll from './scroll.mjs'
 import sessionSwitch from './session-switch.mjs'
 import stream from './stream.mjs'
 import streamHistory from './stream-history.mjs'
@@ -19,6 +23,7 @@ export const SCENARIOS = {
   [streamHistory.name]: streamHistory,
   [keystroke.name]: keystroke,
   [transcript.name]: transcript,
+  [scroll.name]: scroll,
   [multitab.name]: multitab,
   [renderChurn.name]: renderChurn,
   [idleCost.name]: idleCost,

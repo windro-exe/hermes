@@ -1,0 +1,56 @@
+diff --git a/node_modules/use-stick-to-bottom/dist/useStickToBottom.js b/node_modules/use-stick-to-bottom/dist/useStickToBottom.js
+index 7d659ed..88c1743 100644
+--- a/node_modules/use-stick-to-bottom/dist/useStickToBottom.js
++++ b/node_modules/use-stick-to-bottom/dist/useStickToBottom.js
+@@ -28,6 +28,14 @@ const DEFAULT_SPRING_ANIMATION = {
+ const STICK_TO_BOTTOM_OFFSET_PX = 70;
+ const SIXTY_FPS_INTERVAL_MS = 1000 / 60;
+ const RETAIN_ANIMATION_DURATION_MS = 350;
++// [hermes fork patch] Cache the scroll container's computed scroll-behavior.
++// The scrollTop setter reads it on every programmatic scroll write — every
++// animation frame during streaming autoscroll — and getComputedStyle forces a
++// synchronous style flush each time. scroll-behavior does not change at runtime
++// for the transcript container, so a per-element cache removes the flush while
++// preserving the exact value the setter would have read. See
++// fork/changelog/entries/ (scroll getComputedStyle).
++const __hermesScrollBehaviorCache = new WeakMap();
+ let mouseDown = false;
+ globalThis.document?.addEventListener("mousedown", () => {
+     mouseDown = true;
+@@ -82,7 +90,13 @@ export const useStickToBottom = (options = {}) => {
+                     // Override CSS scroll-behavior so programmatic scrollTop
+                     // assignments take effect immediately and aren't intercepted
+                     // by the browser's smooth scrolling.
+-                    const { scrollBehavior } = getComputedStyle(scrollRef.current);
++                    // [hermes fork patch] Read the cached computed value instead
++                    // of calling getComputedStyle every frame (forced reflow).
++                    let scrollBehavior = __hermesScrollBehaviorCache.get(scrollRef.current);
++                    if (scrollBehavior === undefined) {
++                        scrollBehavior = getComputedStyle(scrollRef.current).scrollBehavior;
++                        __hermesScrollBehaviorCache.set(scrollRef.current, scrollBehavior);
++                    }
+                     if (scrollBehavior !== "auto") {
+                         scrollRef.current.style.scrollBehavior = "auto";
+                     }
+@@ -281,13 +295,14 @@ export const useStickToBottom = (options = {}) => {
+         }, 1);
+     }, [setEscapedFromLock, setIsAtBottom, isSelecting, state]);
+     const handleWheel = useCallback(({ target, deltaY }) => {
+-        let element = target;
+-        while (!["scroll", "auto"].includes(getComputedStyle(element).overflow)) {
+-            if (!element.parentElement) {
+-                return;
+-            }
+-            element = element.parentElement;
+-        }
++        // [hermes fork patch] The transcript has a single scroll owner
++        // (scrollRef.current — the element this wheel listener is bound to), so
++        // the original ancestor walk, which called getComputedStyle per level on
++        // every wheel event to find the scrollable container, always resolved to
++        // scrollRef.current. Short-circuit to it and skip the per-event reflows.
++        // Fork-only: narrows the library's general nested-scroller support to
++        // this app's invariant, so it must not go upstream.
++        let element = scrollRef.current ?? target;
+         /**
+          * The browser may cancel the scrolling from the mouse wheel
+          * if we update it from the animation in meantime.

@@ -268,6 +268,17 @@ _LONG_HANDLERS = frozenset(
         "session.active_list",
         "session.branch",
         "session.compress",
+        # session.history rebuilds the whole transcript: a DB read with
+        # include_ancestors=True, then _history_to_messages over every message.
+        # Measured on a real 878-message session: 22ms in the DB and 93ms in the
+        # conversion, 116ms total — and the conversion, not the query, is the
+        # cost, so it grows with transcript length and cannot be indexed away.
+        # Inline that is 116ms of head-of-line blocking on the socket that also
+        # carries prompt.submit and session.interrupt, and the same GIL
+        # amplification noted for session.active_list applies. Its siblings
+        # (session.resume, session.list, session.branch, session.compress) are
+        # already pooled; this one was missed.
+        "session.history",
         "session.list",
         "session.resume",
         "shell.exec",
@@ -14343,6 +14354,13 @@ def _project_tree_inputs(
         include_children=False,
         exclude_sources=_PROJECT_TREE_EXCLUDED_SOURCES,
         include_archived=False,
+        # compact_rows omits the system_prompt blob, which _project_tree_row
+        # never reads. Without it this query hauls every prompt out of the DB
+        # and discards it: measured 242KB carried for 5 rows on a real 13MB
+        # state.db (1.09ms -> 0.44ms). The other list callers — session.list,
+        # session.most_recent, the dashboard — already pass it; this one was
+        # missed, and it runs on every sidebar project-tree refresh.
+        compact_rows=True,
     )
     sessions = [_project_tree_row(r) for r in rows]
     # Parallel-warm the git cache so build_tree's resolver reads it instead of

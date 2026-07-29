@@ -16,6 +16,15 @@ never open a PR against it.
 pulled into a separate folder, merged by hand, then pushed to `origin`. An automated
 sync used to run here and was removed on purpose — do not recreate it.
 
+**Standing decision (2026-07-29): ignore upstream unless something big lands.**
+windro was shown the cost — upstream moves ~400 commits/day, and 17 of the files
+this fork touches were changed upstream within two days — and chose to stay on the
+current base deliberately. So the divergence growing is *expected*, not a problem to
+fix. Do not raise it as a task, do not offer to "catch up", and do not treat a large
+commit count as a reason to merge. If he asks whether anything big happened, answer
+by reading the upstream log; otherwise leave it alone. He knows the trade: the longer
+he waits, the more a future merge costs, and he accepted that.
+
 **Never commit to `main`.** The workflow is fixed: cut a fresh branch, make the
 change, run the tests, report what passed and what failed, then **wait for windro to
 approve**. He merges, or tells you to. Do not merge on your own initiative.

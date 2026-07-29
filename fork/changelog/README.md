@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-07-29 | Performance | [Scroll jank: timeline tracker measured every message every frame (21 -> 44 fps)](entries/2026-07-29-01-timeline-scroll-offsets.md) | current |
 | 2026-07-28 | Changed | [Composer glass: less transparent by default, user-adjustable lever](entries/2026-07-28-02-composer-glass-setting.md) | current |
 | 2026-07-28 | Performance | [Artifacts page: column projection instead of 30 full transcripts](entries/2026-07-28-01-artifacts-field-projection.md) | current |
 | 2026-07-27 | Performance | [Scroll jank fixed: patch-package + use-stick-to-bottom getComputedStyle removal](entries/2026-07-27-10-scroll-patch-applied.md) | current |

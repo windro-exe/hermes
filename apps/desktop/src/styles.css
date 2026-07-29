@@ -1266,9 +1266,11 @@ text-* variant utilities. */ .btn-arc {
      reads as frosted glass. At lever 0 both strengths reach 100% and the blur
      becomes 0, which switches the backdrop-filter off entirely — the cheapest
      and most readable setting. */
-  --composer-fill-strength: 86.50%;
-  --composer-fill-strength-scrolled: 79.30%;
-  --composer-glass-blur: 0.800rem;
+  --composer-fill-strength: 82.00%;
+  --composer-fill-strength-scrolled: 74.50%;
+  --composer-glass-blur: 0.920rem;
+  --composer-glass-brightness: 1.1350;
+  --composer-glass-saturate: 1.1800;
 }
 
 [data-slot='composer-root'] {

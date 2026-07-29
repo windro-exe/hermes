@@ -50,6 +50,21 @@ const read = (): number => {
 export interface ComposerGlassVars {
   /** `--composer-glass-blur`: backdrop blur radius. `0` disables the filter. */
   blur: string
+  /**
+   * `--composer-glass-brightness`: backdrop brightness multiplier.
+   *
+   * This is what makes the effect actually *visible*. Measured on the real
+   * palette: `--dt-card` (#1b1e24) and `--dt-background` (#14161a) are nearly
+   * the same colour, so mixing card over background at any alpha barely changes
+   * a pixel — a screenshot diff between a fully opaque composer and a 55% one
+   * came out at a mean of 2.63/255. Blur alone is invisible too, because a blur
+   * needs contrast behind it and at rest the composer sits over flat
+   * background. Lifting the backdrop's brightness makes the panel read as
+   * frosted glass against its surroundings even with nothing behind it.
+   */
+  brightness: string
+  /** `--composer-glass-saturate`: backdrop saturation, lifted with the lever. */
+  saturate: string
   /** `--composer-fill-strength`: card percentage in the resting fill. */
   strength: string
   /** `--composer-fill-strength-scrolled`: card percentage once the thread is
@@ -72,11 +87,17 @@ export interface ComposerGlassVars {
  */
 export function composerGlassVars(level: number): ComposerGlassVars {
   const t = clamp(level)
-  const strength = 100 - 0.45 * t
-  const scrolled = strength - 0.24 * t
+  // Range widened from the first attempt (which bottomed out at 55%): dark card
+  // over dark background needs a bigger alpha swing to be perceptible at all.
+  const strength = 100 - 0.6 * t
+  const scrolled = strength - 0.25 * t
 
   return {
-    blur: t === 0 ? '0' : `${(0.5 + 0.01 * t).toFixed(3)}rem`,
+    blur: t === 0 ? '0' : `${(0.5 + 0.014 * t).toFixed(3)}rem`,
+    // 1 = untouched at lever 0, so "solid" really is the plain surface with no
+    // filter work at all. Climbs to a clearly visible lift at the top.
+    brightness: t === 0 ? '1' : (1 + 0.0045 * t).toFixed(4),
+    saturate: t === 0 ? '1' : (1 + 0.006 * t).toFixed(4),
     strength: `${strength.toFixed(2)}%`,
     strengthScrolled: `${Math.max(0, scrolled).toFixed(2)}%`
   }
@@ -102,6 +123,8 @@ export function applyComposerGlass(level: number, root?: HTMLElement): void {
   target.style.setProperty('--composer-fill-strength', vars.strength)
   target.style.setProperty('--composer-fill-strength-scrolled', vars.strengthScrolled)
   target.style.setProperty('--composer-glass-blur', vars.blur)
+  target.style.setProperty('--composer-glass-brightness', vars.brightness)
+  target.style.setProperty('--composer-glass-saturate', vars.saturate)
 }
 
 if (typeof window !== 'undefined') {

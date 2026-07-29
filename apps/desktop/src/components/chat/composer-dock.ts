@@ -18,8 +18,9 @@ export const composerFill = 'bg-(--composer-fill)'
  *  The default lives in styles.css `:root` so the var is always defined (no
  *  comma-fallback inside the arbitrary value, which Tailwind would mangle). */
 export const composerSurfaceGlass = cn(
-  'backdrop-blur-(--composer-glass-blur) backdrop-saturate-[1.12]',
-  '[-webkit-backdrop-filter:blur(var(--composer-glass-blur))_saturate(1.12)]',
+  'backdrop-blur-(--composer-glass-blur) backdrop-saturate-(--composer-glass-saturate)',
+  'backdrop-brightness-(--composer-glass-brightness)',
+  '[-webkit-backdrop-filter:blur(var(--composer-glass-blur))_saturate(var(--composer-glass-saturate))_brightness(var(--composer-glass-brightness))]',
   'transition-[background-color] duration-150 ease-out'
 )
 

@@ -120,6 +120,66 @@ describe('code-card streaming glow is compositor-only', () => {
   })
 })
 
+describe('thread timeline caches scroll offsets', () => {
+  // The timeline's active-prompt tracker ran one querySelector AND one
+  // getBoundingClientRect PER user message PER scroll frame whenever the thread
+  // wasn't pinned to the bottom — i.e. during all manual scrolling. A CPU
+  // profile of a 200-turn scroll attributed 22.7% of sampled time to
+  // querySelector and 23.9% to getBoundingClientRect. Caching the offsets took
+  // the same scroll from 21fps to 44fps (p99 frame 930ms -> 44ms).
+  //
+  // Removing the cache changes no behaviour, only speed, so nothing else fails.
+  const source = () =>
+    import('node:fs').then(fs =>
+      fs.readFileSync('src/components/assistant-ui/thread/timeline.tsx', 'utf8')
+    )
+
+  it('does not query per entry inside the scroll handler', async () => {
+    const src = await source()
+
+    expect(
+      src.includes('cachedTops'),
+      'the timeline offset cache is gone — the active-prompt tracker is back to ' +
+        'one querySelector + one getBoundingClientRect per user message per ' +
+        'scroll frame. See fork/changelog/entries/.'
+    ).toBe(true)
+
+    // The per-frame offsets must be derived from the cache by arithmetic, not
+    // re-measured. (`CSS.escape` still appears in the file for the click-to-jump
+    // handler, which runs once per click — that one is fine.)
+    expect(
+      src.includes('cachedTops.map'),
+      'the scroll handler no longer derives offsets from the cache.'
+    ).toBe(true)
+
+    const compute = src.slice(src.indexOf('const compute = ()'), src.indexOf('const onScroll = ()'))
+
+    expect(
+      compute.includes('querySelector'),
+      'the scroll compute path queries the DOM again — that is the per-frame ' +
+        'lookup the cache exists to avoid.'
+    ).toBe(false)
+  })
+
+  it('invalidates the cache when the content height changes', async () => {
+    const src = await source()
+
+    // Without this the active tick goes stale as the render budget mounts more
+    // messages or a tool block expands.
+    expect(src.includes('cachedScrollHeight')).toBe(true)
+  })
+
+  it('keeps the pinned-to-bottom fast path', async () => {
+    const src = await source()
+
+    expect(
+      src.includes("dataset.following === 'true'"),
+      'the streaming fast path is gone — the tracker would now do work on every ' +
+        'flush while pinned to the bottom.'
+    ).toBe(true)
+  })
+})
+
 describe('artifacts page fetches a column projection', () => {
   it('requests only the columns the extractor reads', async () => {
     const { ARTIFACT_MESSAGE_FIELDS } = await import('@/app/artifacts/artifact-utils')

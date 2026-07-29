@@ -243,6 +243,19 @@ function collectArtifactsFromMessage(message: SessionMessage, pushValue: (value:
   }
 }
 
+/**
+ * The only message columns the artifact scan reads. Passed to
+ * `getSessionMessages` as a projection so the Artifacts page doesn't pull whole
+ * transcripts (reasoning, api_content, codex items, …) across up to 30 sessions
+ * just to look for file paths and URLs.
+ *
+ * Kept next to the extractor deliberately: if `collectArtifactsFromMessage` or
+ * `messageText` starts reading another column, it must be added here or the
+ * value silently arrives as `undefined`. `content` covers `messageText`'s
+ * primary source; its `message.text` fallback is a derived field, not a column.
+ */
+export const ARTIFACT_MESSAGE_FIELDS = ['role', 'content', 'tool_calls', 'timestamp'] as const
+
 export function collectArtifactsForSession(session: SessionInfo, messages: SessionMessage[]): ArtifactRecord[] {
   const found = new Map<string, ArtifactRecord>()
   const title = artifactSessionTitle(session)

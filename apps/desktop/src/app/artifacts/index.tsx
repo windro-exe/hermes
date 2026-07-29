@@ -35,6 +35,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import {
   ARTIFACT_FILTERS,
+  ARTIFACT_MESSAGE_FIELDS,
   type ArtifactFilter,
   artifactImageSrc,
   type ArtifactRecord,
@@ -122,7 +123,13 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
     try {
       const sessions = (await listAllProfileSessions(30, 1)).sessions
-      const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)))
+      // Fetch only the columns collectArtifactsFromMessage reads (message text,
+      // tool_calls, role, timestamp) instead of full transcripts across up to 30
+      // sessions. Extraction stays single-sourced in TS; this just stops hauling
+      // reasoning/api_content/etc. over 30 REST reads. See fork/changelog.
+      const results = await Promise.allSettled(
+        sessions.map(session => getSessionMessages(session.id, session.profile, ARTIFACT_MESSAGE_FIELDS))
+      )
       const nextArtifacts: ArtifactRecord[] = []
 
       results.forEach((result, index) => {

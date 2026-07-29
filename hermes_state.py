@@ -6858,12 +6858,28 @@ class SessionDB:
 
         return self._execute_write(_do)
 
+    _messages_columns_cache: Optional[frozenset] = None
+
+    @classmethod
+    def _messages_columns(cls) -> frozenset:
+        """Declared column names of the ``messages`` table, from SCHEMA_SQL.
+
+        Used to whitelist caller-supplied ``fields`` so a projection request can
+        never inject SQL — anything not a real column is dropped.
+        """
+        if cls._messages_columns_cache is None:
+            cls._messages_columns_cache = frozenset(
+                cls._parse_schema_columns(SCHEMA_SQL)["messages"]
+            )
+        return cls._messages_columns_cache
+
     def get_messages(
         self,
         session_id: str,
         include_inactive: bool = False,
         limit: Optional[int] = None,
         offset: int = 0,
+        fields: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Load messages for a session in insertion order.
 
@@ -6882,8 +6898,24 @@ class SessionDB:
         LIMIT clause for OFFSET, so it's emitted as ``LIMIT -1`` (unbounded).
         """
         active_clause = "" if include_inactive else " AND active = 1"
+        # Optional column projection. ``fields`` is whitelisted against the real
+        # messages columns (never interpolated raw), so it cannot inject SQL;
+        # unknown names are dropped. ``id`` and ``session_id`` are always carried
+        # for stable identity/ordering. When ``fields`` is None the SELECT is
+        # ``*`` — unchanged for every existing caller. The artifacts page uses
+        # this to fetch only role/content/tool_calls/timestamp across many
+        # sessions instead of full transcripts (see the REST endpoint).
+        select_cols = "*"
+        if fields:
+            allowed = self._messages_columns()
+            chosen = [c for c in fields if c in allowed]
+            if chosen:
+                for required in ("id", "session_id"):
+                    if required in allowed and required not in chosen:
+                        chosen.append(required)
+                select_cols = ", ".join(chosen)
         sql = (
-            "SELECT * FROM messages WHERE session_id = ?"
+            f"SELECT {select_cols} FROM messages WHERE session_id = ?"
             f"{active_clause} ORDER BY id"
         )
         params: list = [session_id]

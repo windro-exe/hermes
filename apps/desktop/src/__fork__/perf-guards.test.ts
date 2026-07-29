@@ -120,6 +120,42 @@ describe('code-card streaming glow is compositor-only', () => {
   })
 })
 
+describe('artifacts page fetches a column projection', () => {
+  it('requests only the columns the extractor reads', async () => {
+    const { ARTIFACT_MESSAGE_FIELDS } = await import('@/app/artifacts/artifact-utils')
+
+    // messageText reads `content`; collectArtifactsFromMessage also reads
+    // tool_calls and role; the record carries timestamp. Nothing else.
+    expect([...ARTIFACT_MESSAGE_FIELDS].sort()).toEqual([
+      'content',
+      'role',
+      'timestamp',
+      'tool_calls'
+    ])
+  })
+
+  it('the artifacts page passes the projection to getSessionMessages', async () => {
+    const source = await import('node:fs').then(fs =>
+      fs.readFileSync('src/app/artifacts/index.tsx', 'utf8')
+    )
+
+    expect(
+      source.includes('ARTIFACT_MESSAGE_FIELDS'),
+      'the Artifacts page stopped passing a field projection — it is back to ' +
+        'pulling full transcripts across up to 30 sessions. ' +
+        'See fork/changelog/entries/.'
+    ).toBe(true)
+  })
+
+  it('getSessionMessages still defaults to every column', async () => {
+    // The resume prefetch calls it with no fields and needs the full row.
+    const source = await import('node:fs').then(fs => fs.readFileSync('src/hermes.ts', 'utf8'))
+    const fn = source.slice(source.indexOf('export function getSessionMessages'))
+
+    expect(fn.includes('fields && fields.length > 0')).toBe(true)
+  })
+})
+
 describe('use-stick-to-bottom patch (scroll getComputedStyle)', () => {
   // The patch removes per-frame getComputedStyle from the scrollTop setter and
   // the per-wheel-event getComputedStyle walk. It lives in a patch-package file

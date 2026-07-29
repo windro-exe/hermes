@@ -44,6 +44,85 @@ class TestSessionHistoryIsPooled:
             )
 
 
+class TestGetMessagesFieldProjection:
+    """The artifacts page fetches a column projection, not whole transcripts.
+
+    The Artifacts page scans up to 30 sessions for file paths and URLs. Its
+    extractor reads only role/content/tool_calls/timestamp, so pulling every
+    column (reasoning, api_content, codex items, …) across 30 REST reads was
+    waste. Measured on a real 878-message session: 1803KB -> 1411KB, 22% smaller.
+    """
+
+    def _db(self, tmp_path):
+        from hermes_state import SessionDB
+
+        db = SessionDB(db_path=tmp_path / "state.db")
+        sid = "sess-projection"
+        db.create_session(session_id=sid, source="cli")
+        db.append_message(sid, role="assistant", content="look at /tmp/out.png")
+        db.append_message(sid, role="user", content="thanks")
+        return db, sid
+
+    def test_projection_returns_only_requested_columns(self, tmp_path):
+        db, sid = self._db(tmp_path)
+
+        rows = db.get_messages(sid, fields=["role", "content"])
+
+        assert rows, "no messages returned"
+        # id and session_id are always carried for stable identity.
+        assert set(rows[0].keys()) == {"role", "content", "id", "session_id"}, (
+            "get_messages field projection changed shape — the artifacts page "
+            "relies on it to avoid pulling whole transcripts. "
+            "See fork/changelog/entries/."
+        )
+
+    def test_no_fields_returns_every_column(self, tmp_path):
+        """The default must stay unchanged — resume prefetch depends on it."""
+        db, sid = self._db(tmp_path)
+
+        full = db.get_messages(sid)
+        projected = db.get_messages(sid, fields=["role"])
+
+        assert len(full[0].keys()) > len(projected[0].keys())
+        assert "reasoning" in full[0], (
+            "get_messages no longer returns all columns by default — the resume "
+            "prefetch and every other caller would silently lose fields."
+        )
+
+    def test_unknown_and_injection_fields_are_dropped(self, tmp_path):
+        """fields is whitelisted against real columns, never interpolated raw."""
+        db, sid = self._db(tmp_path)
+
+        rows = db.get_messages(
+            sid, fields=["role", "bogus", "content; DROP TABLE messages"]
+        )
+
+        assert set(rows[0].keys()) == {"role", "id", "session_id"}
+        # The table must still exist and be readable.
+        assert db.get_messages(sid), "messages table did not survive — injection!"
+
+    def test_all_unknown_fields_falls_back_to_full_row(self, tmp_path):
+        """Never return an empty projection: an unusable response is worse."""
+        db, sid = self._db(tmp_path)
+
+        rows = db.get_messages(sid, fields=["definitely_not_a_column"])
+
+        assert "role" in rows[0] and "content" in rows[0]
+
+    def test_projected_content_and_tool_calls_are_still_decoded(self, tmp_path):
+        """The projection must not bypass the JSON/blob decoding."""
+        db, sid = self._db(tmp_path)
+
+        rows = db.get_messages(sid, fields=["role", "content", "tool_calls"])
+
+        assert isinstance(rows[0]["content"], str)
+        for row in rows:
+            if row.get("tool_calls"):
+                assert not isinstance(row["tool_calls"], str), (
+                    "tool_calls came back as a raw JSON string under projection"
+                )
+
+
 class TestProjectTreeUsesCompactRows:
     """The project tree must not drag system_prompt blobs out of the DB.
 

@@ -11856,7 +11856,19 @@ async def get_session_messages(
     profile: Optional[str] = None,
     limit: Optional[int] = None,
     offset: int = 0,
+    fields: Optional[str] = None,
 ):
+    # ``fields`` is an optional comma-separated column projection. The artifacts
+    # page uses it to fetch only role/content/tool_calls/timestamp across many
+    # sessions instead of full transcripts — the columns its extractor actually
+    # reads — cutting each response substantially. get_messages whitelists the
+    # names against real columns, so an unknown or malicious name is simply
+    # dropped. Omitted (the default) returns every column, unchanged for the
+    # resume prefetch and every other caller.
+    field_list = (
+        [f.strip() for f in fields.split(",") if f.strip()] if fields else None
+    )
+
     def _read():
         db = _open_session_db_for_profile(profile)
         try:
@@ -11866,7 +11878,9 @@ async def get_session_messages(
             sid = db.resolve_resume_session_id(sid)
             # Clamp limit to prevent abuse (max 500 per page)
             _limit = min(limit, 500) if limit is not None else None
-            return sid, _limit, db.get_messages(sid, limit=_limit, offset=offset)
+            return sid, _limit, db.get_messages(
+                sid, limit=_limit, offset=offset, fields=field_list
+            )
         finally:
             db.close()
 

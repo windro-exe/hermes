@@ -118,10 +118,11 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-07-28 | Performance | [Artifacts page: column projection instead of 30 full transcripts](entries/2026-07-28-01-artifacts-field-projection.md) | current |
 | 2026-07-27 | Performance | [Scroll jank fixed: patch-package + use-stick-to-bottom getComputedStyle removal](entries/2026-07-27-10-scroll-patch-applied.md) | current |
 | 2026-07-27 | Docs | [Scroll-library getComputedStyle — real, blocked on a patch-package decision](entries/2026-07-27-09-scroll-getcomputedstyle-investigation.md) | superseded by 10 |
 | 2026-07-27 | Docs | [Bundle splitting investigated — no change, wrong optimization for local-disk Electron](entries/2026-07-27-08-bundle-investigation.md) | current |
-| 2026-07-27 | Docs | [Session-load path investigated — no change, claims already done or unsafe](entries/2026-07-27-07-session-load-investigation.md) | current |
+| 2026-07-27 | Docs | [Session-load path investigated — no change, claims already done or unsafe](entries/2026-07-27-07-session-load-investigation.md) | current (artifacts half superseded by 2026-07-28-01) |
 | 2026-07-27 | Performance | [Code-card glow: opacity cross-fade instead of box-shadow](entries/2026-07-27-06-code-card-glow.md) | current |
 | 2026-07-27 | Performance | [Streaming renderer: visibleGroups + content-text memo (three claims rejected)](entries/2026-07-27-05-streaming-renderer.md) | current |
 | 2026-07-27 | Performance | [Model picker: memoize credential-pool reads, warm caches at startup](entries/2026-07-27-04-model-picker-latency.md) | current |

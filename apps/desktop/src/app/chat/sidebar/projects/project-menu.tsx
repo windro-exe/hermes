@@ -18,6 +18,7 @@ import { useI18n } from '@/i18n'
 import { PROFILE_SWATCHES } from '@/lib/profile-color'
 import { cn } from '@/lib/utils'
 import { $panesFlipped, dismissAutoProject } from '@/store/layout'
+import { openProjectRules } from '@/store/project-rules'
 import {
   copyPath,
   deleteProject,
@@ -209,6 +210,16 @@ export function ProjectMenu({
               <DropdownMenuSeparator />
             </>
           )}
+          {/* Rules live in the project FOLDER (.hermes/rules), so this is
+              offered for auto-adopted repos too — unlike rename/add-folder,
+              it needs no projects.db record, only a path. */}
+          <DropdownMenuItem
+            disabled={!project.path}
+            onSelect={() => openProjectRules({ label: project.label, path: project.path })}
+          >
+            <Codicon name="law" size="0.875rem" />
+            <span>Rules</span>
+          </DropdownMenuItem>
           <DropdownMenuItem disabled={!project.path} onSelect={() => void revealPath(project.path)}>
             <Codicon name="folder-opened" size="0.875rem" />
             <span>{p.reveal}</span>

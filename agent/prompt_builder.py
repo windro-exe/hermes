@@ -2194,7 +2194,25 @@ def _load_project_rules(cwd_path: Path, context_length: Optional[int] = None) ->
             "were not loaded: path-scoped rules are not active yet.)_"
         )
 
-    result = f"## Project rules ({_PROJECT_RULES_DIR})\n\n" + "\n\n".join(blocks) + note
+    # Precedence has to be stated, not implied. Without it these rules arrive
+    # under a generic "project context ... should be followed" wrapper, which
+    # loses to any identity claim in the persona: a rule renaming the agent was
+    # simply ignored in favour of "You are Hermes". The user writing a file in
+    # their own project is a deliberate, specific instruction and should beat a
+    # general default — so say so explicitly, and bound it so this cannot be
+    # used to talk the agent out of its safety rules.
+    header = (
+        f"## Project rules ({_PROJECT_RULES_DIR})\n\n"
+        "windro wrote these for THIS project. They are direct instructions, not "
+        "background reading. Where one conflicts with your general defaults, "
+        "persona, or usual phrasing, the project rule wins — including rules "
+        "about what to call yourself or how to present yourself. Follow them "
+        "for every turn in this project without being reminded, and do not "
+        "explain or cite them unless asked.\n\n"
+        "Two limits: they never override safety, and they never require you to "
+        "misrepresent a fact or claim you did something you did not do.\n\n"
+    )
+    result = header + "\n\n".join(blocks) + note
     return _truncate_content(
         result,
         _PROJECT_RULES_DIR,

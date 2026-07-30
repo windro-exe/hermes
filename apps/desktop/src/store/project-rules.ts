@@ -19,6 +19,15 @@ import { notifyError } from '@/store/notifications'
 export const RULES_DIR = '.hermes/rules'
 
 /**
+ * Default file the UI keeps its rule list in.
+ *
+ * The loader scans the whole directory, so extra files created by hand still
+ * work — but the UI presents ONE flat list of short, one-line rules rather than
+ * a file browser. A rule is meant to read like an allowlist entry, not an essay.
+ */
+export const DEFAULT_RULES_FILE = 'rules.md'
+
+/**
  * Frontmatter written to disable a rule file.
  *
  * The loader treats any explicit non-always mode as "not active", so a disabled
@@ -199,7 +208,34 @@ export async function loadProjectRules(projectPath: string): Promise<RuleFile[]>
 }
 
 export async function saveRuleFile(file: Pick<RuleFile, 'frontmatter' | 'path' | 'rules'>): Promise<void> {
-  await writeDesktopFileText(file.path, serializeRules(file.frontmatter, file.rules))
+  // mkdirp: .hermes/rules may not exist yet on a project that has never had
+  // rules. The write handler refuses missing parents by default, which is the
+  // right guard for arbitrary paths but wrong for a directory we own.
+  await writeDesktopFileText(file.path, serializeRules(file.frontmatter, file.rules), { mkdirp: true })
+}
+
+/** Path of the UI's rule list for a project. */
+export function defaultRulesPath(projectPath: string): string {
+  return joinProjectPath(projectPath, ...RULES_DIR.split('/'), DEFAULT_RULES_FILE)
+}
+
+/**
+ * Replace the whole rule list.
+ *
+ * Writes to the file the list came from when there is one, so a hand-created
+ * file keeps being the source of truth instead of being shadowed by a second
+ * one. Frontmatter is preserved.
+ */
+export async function saveRuleList(
+  projectPath: string,
+  rules: string[],
+  existing?: Pick<RuleFile, 'frontmatter' | 'path'>
+): Promise<void> {
+  await writeDesktopFileText(
+    existing?.path ?? defaultRulesPath(projectPath),
+    serializeRules(existing?.frontmatter ?? '', rules),
+    { mkdirp: true }
+  )
 }
 
 export async function createRuleFile(projectPath: string, name: string): Promise<string> {
@@ -207,7 +243,7 @@ export async function createRuleFile(projectPath: string, name: string): Promise
   const fileName = safe.toLowerCase().endsWith('.md') ? safe : `${safe}.md`
   const path = joinProjectPath(projectPath, ...RULES_DIR.split('/'), fileName)
 
-  await writeDesktopFileText(path, '')
+  await writeDesktopFileText(path, '', { mkdirp: true })
 
   return path
 }
@@ -228,5 +264,5 @@ export async function deleteRuleFile(path: string): Promise<void> {
 export async function setRuleFileEnabled(file: RuleFile, enabled: boolean): Promise<void> {
   const frontmatter = enabled ? '' : DISABLED_FRONTMATTER
 
-  await writeDesktopFileText(file.path, serializeRules(frontmatter, file.rules))
+  await writeDesktopFileText(file.path, serializeRules(frontmatter, file.rules), { mkdirp: true })
 }

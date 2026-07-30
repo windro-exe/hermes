@@ -15,7 +15,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const readDesktopDir = vi.fn()
 const readDesktopFileText = vi.fn()
-const writeDesktopFileText = vi.fn(async () => ({ path: 'x' }))
+
+const writeDesktopFileText =
+  vi.fn<(path: string, content: string) => Promise<{ path: string }>>(async path => ({ path }))
+
 const trashDesktopPath = vi.fn(async () => undefined)
 
 vi.mock('@/lib/desktop-fs', () => ({
@@ -166,7 +169,7 @@ describe('loadProjectRules matches the Python loader', () => {
 
     await saveRuleFile({ frontmatter: file.frontmatter, path: file.path, rules: file.rules })
 
-    const written = writeDesktopFileText.mock.calls.at(-1)?.[1] as string
+    const written = writeDesktopFileText.mock.calls.at(-1)?.[1] ?? ''
 
     expect(written).not.toContain('----')
     expect(written).toBe('---\ndescription: keep me\n---\n- one\n')
@@ -249,7 +252,7 @@ describe('the enable toggle is the file', () => {
   it('round-trips: disable then enable returns the original body', async () => {
     await setRuleFileEnabled(file, false)
 
-    const disabled = writeDesktopFileText.mock.calls[0][1] as string
+    const disabled = writeDesktopFileText.mock.calls[0][1] ?? ''
 
     expect(disabled).toBe('---\nmode: manual\n---\n- keep this rule\n')
 

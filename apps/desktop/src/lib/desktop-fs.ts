@@ -83,7 +83,11 @@ export async function readDesktopFileText(path: string): Promise<HermesReadFileT
 // IPC; remote writes hit the dashboard's POST /api/fs/write-text (same path
 // hardening, parent-must-exist, size cap) so the editor behaves identically in
 // both modes. Stale-on-disk detection is the caller's job (re-read before save).
-export async function writeDesktopFileText(path: string, content: string): Promise<{ path: string }> {
+export async function writeDesktopFileText(
+  path: string,
+  content: string,
+  options?: { mkdirp?: boolean }
+): Promise<{ path: string }> {
   const desktop = bridge()
 
   if (!isDesktopFsRemoteMode()) {
@@ -91,7 +95,7 @@ export async function writeDesktopFileText(path: string, content: string): Promi
       throw new Error('Saving is not available')
     }
 
-    return desktop.writeTextFile(path, content)
+    return desktop.writeTextFile(path, content, options)
   }
 
   const result = await remoteFsApi<{ ok?: boolean; path?: string }>('/api/fs/write-text', { content, path })

@@ -484,6 +484,50 @@ class TestProjectRuleTool:
         assert "project_rule" in _HERMES_CORE_TOOLS
         assert "memory" in _HERMES_CORE_TOOLS
 
+    @pytest.mark.parametrize("toolset", ["coding", "hermes-acp", "hermes-api-server"])
+    def test_present_in_every_surface_that_has_memory(self, toolset):
+        """The list that matters is the resolved toolset, not _HERMES_CORE_TOOLS.
+
+        This test exists because the first version of this guard only checked
+        _HERMES_CORE_TOOLS and passed while the tool was completely invisible in
+        the desktop app. The desktop and `hermes --tui` collapse to the `coding`
+        posture toolset (tui_gateway/server.py::_load_enabled_toolsets), which is
+        built from its own explicit list — so a tool can be in the core list and
+        still never reach the model.
+
+        Anywhere the agent can reach for `memory`, it must also be able to reach
+        for `project_rule`, or "add a rule" resolves to a private memory entry.
+        """
+        from toolsets import resolve_toolset
+
+        tools = resolve_toolset(toolset)
+
+        assert "memory" in tools, f"{toolset} no longer has memory — update this guard"
+        assert "project_rule" in tools, (
+            f"project_rule is missing from the '{toolset}' toolset, so the agent "
+            "cannot see it there and will write rules into memory instead. "
+            "See fork/changelog/entries/."
+        )
+
+    def test_no_surface_offers_memory_without_project_rule(self):
+        """Catch the next surface someone adds, not just today's three."""
+        from toolsets import TOOLSETS, resolve_toolset
+
+        gaps = []
+        for name in TOOLSETS:
+            try:
+                tools = resolve_toolset(name)
+            except Exception:
+                continue
+            if "memory" in tools and "project_rule" not in tools:
+                gaps.append(name)
+
+        # The single-purpose `memory` toolset is deliberately exempt.
+        assert gaps == ["memory"], (
+            f"these toolsets offer memory but not project_rule: {gaps}. "
+            "The agent will store project rules as private memory there."
+        )
+
     def test_description_steers_away_from_memory(self):
         """The wording is the whole mechanism — assert it stays."""
         from tools.project_rule_tool import PROJECT_RULE_SCHEMA

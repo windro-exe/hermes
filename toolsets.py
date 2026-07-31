@@ -364,6 +364,12 @@ TOOLSETS = {
             "browser_press", "browser_get_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
+            # Must sit beside `memory` here, not only in _HERMES_CORE_TOOLS: the
+            # desktop app and `hermes --tui` collapse to this posture toolset
+            # (see tui_gateway/server.py::_load_enabled_toolsets), so a tool
+            # missing from this list is invisible in the GUI. Without it, "add a
+            # rule" resolves to memory or a hand-written AGENTS.md.
+            "project_rule",
             "session_search", "clarify",
             "execute_code", "delegate_task",
         ],
@@ -396,6 +402,7 @@ TOOLSETS = {
             "browser_press", "browser_get_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
+            "project_rule",
             "session_search",
             "execute_code", "delegate_task",
         ],
@@ -422,6 +429,7 @@ TOOLSETS = {
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             # Planning & memory
             "todo", "memory",
+            "project_rule",
             # Session history search
             "session_search",
             # Code execution + delegation

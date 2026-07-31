@@ -238,9 +238,27 @@ PROJECT_RULE_SCHEMA = {
 }
 
 
+# Registered into the `memory` toolset deliberately, not a `core`/`rules` one.
+#
+# Enabled toolsets come from per-platform tool config, which enumerates specific
+# toolset names (browser, file, memory, todo, …). A tool in a toolset nobody
+# enabled is invisible no matter how many tool-NAME lists it appears in — that is
+# exactly how this shipped broken twice: registered under `core`, which is not in
+# the desktop's enabled set, so the agent could only see `memory` and dutifully
+# wrote project rules there.
+#
+# A new `rules` toolset would have the same problem in reverse: existing
+# config.yaml files enumerate their toolsets, so a name they have never heard of
+# stays off.
+#
+# Pairing it with `memory` makes the requirement structural instead of a list to
+# maintain: the invariant is "wherever the agent can reach for memory, it must be
+# able to reach for project rules", and sharing the toolset guarantees that by
+# construction. They are the two halves of the same question — private recall
+# versus versioned project instruction.
 registry.register(
     name="project_rule",
-    toolset="core",
+    toolset="memory",
     schema=PROJECT_RULE_SCHEMA,
     handler=lambda args, **kw: project_rule_tool(
         action=args.get("action", ""),

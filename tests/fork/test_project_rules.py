@@ -510,7 +510,14 @@ class TestProjectRuleTool:
         )
 
     def test_no_surface_offers_memory_without_project_rule(self):
-        """Catch the next surface someone adds, not just today's three."""
+        """Catch the next surface someone adds, not just today's three.
+
+        An earlier version of this test EXEMPTED the `memory` toolset, which was
+        precisely backwards and is why this shipped broken a second time: the
+        tool was registered under `core`, the desktop's enabled toolsets do not
+        include `core`, and the exemption hid it. `project_rule` now lives in the
+        `memory` toolset so co-presence is structural.
+        """
         from toolsets import TOOLSETS, resolve_toolset
 
         gaps = []
@@ -522,10 +529,69 @@ class TestProjectRuleTool:
             if "memory" in tools and "project_rule" not in tools:
                 gaps.append(name)
 
-        # The single-purpose `memory` toolset is deliberately exempt.
-        assert gaps == ["memory"], (
+        assert gaps == [], (
             f"these toolsets offer memory but not project_rule: {gaps}. "
             "The agent will store project rules as private memory there."
+        )
+
+    def test_registered_in_an_enabled_toolset(self):
+        """The toolset it is REGISTERED in has to be one platforms enable.
+
+        This is the test that was missing. Tool visibility is decided by the
+        tool's own toolset being in the platform's enabled set — not by the tool
+        name appearing in some other toolset's list. Registered under `core`,
+        which no platform config enables, the tool was invisible everywhere while
+        every name-based assertion passed.
+        """
+        from tools.registry import discover_builtin_tools, registry
+        from toolsets import resolve_toolset
+
+        discover_builtin_tools()
+        entry = registry.get_entry("project_rule")
+
+        assert entry is not None, "project_rule is not registered at all"
+        assert entry.toolset == "memory", (
+            f"project_rule is registered under '{entry.toolset}'. It must share a "
+            "toolset with `memory` so that any platform enabling memory also gets "
+            "it. A toolset name that platform configs do not enumerate (core, "
+            "rules, …) makes the tool invisible."
+        )
+        assert "project_rule" in resolve_toolset(entry.toolset)
+
+    def test_reaches_the_desktop_tool_schema(self):
+        """End-to-end: resolve tools the way the desktop gateway actually does.
+
+        The desktop resolves enabled toolsets from platform tool config (see
+        tui_gateway/server.py::_load_enabled_toolsets — note that
+        coding_selection() returns None outside a code workspace, so the `coding`
+        posture is NOT the path most sessions take), then builds definitions
+        through the registry. Anything short of this is not proof.
+        """
+        from hermes_cli.tools_config import _get_platform_tools
+        from tools.registry import discover_builtin_tools, registry
+        from toolsets import resolve_toolset
+
+        discover_builtin_tools()
+
+        # A minimal config that enables memory, as every real one does.
+        enabled = _get_platform_tools({"tools": {"cli": ["memory", "file"]}}, "cli")
+
+        names: set[str] = set()
+        for toolset in set(enabled) | {"project"}:
+            try:
+                names |= set(resolve_toolset(toolset))
+            except Exception:
+                continue
+
+        built = {
+            d.get("function", d).get("name", "")
+            for d in registry.get_definitions(names, quiet=True)
+        }
+
+        assert "memory" in built, "test config failed to enable memory"
+        assert "project_rule" in built, (
+            "project_rule is absent from the tool definitions the desktop builds, "
+            "so the agent cannot call it and will write rules into memory."
         )
 
     def test_description_steers_away_from_memory(self):

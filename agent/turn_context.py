@@ -591,6 +591,17 @@ def build_turn_context(
         )
 
     # ── System prompt (cached per session for prefix caching) ──
+    # Exception to the cache: if this project's .hermes/rules or IDEA.md changed
+    # since the prompt was built, rebuild. Those files exist to steer this
+    # session, so a rule saved mid-session has to take effect on the next
+    # message rather than waiting for a new session.
+    try:
+        from agent.system_prompt import refresh_project_files_if_changed
+
+        refresh_project_files_if_changed(agent)
+    except Exception:
+        logger.debug("project-files refresh check failed", exc_info=True)
+
     if agent._cached_system_prompt is None:
         restore_or_build_system_prompt(agent, system_message, conversation_history)
 

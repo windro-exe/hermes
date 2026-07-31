@@ -12,7 +12,9 @@ Fork-owned file. Upstream has no tests/fork/, so this cannot conflict.
 
 from __future__ import annotations
 
+import json
 import subprocess
+import time
 
 import pytest
 
@@ -274,3 +276,232 @@ class TestSafety:
             "the rules directory is not capped — a runaway directory would "
             "balloon every prompt in the project"
         )
+
+
+class TestRulesTakeEffectMidSession:
+    """A rule saved while a session is open must reach the agent.
+
+    The system prompt is built once per session and cached to keep the provider's
+    prefix cache warm (build_system_prompt's docstring says so explicitly). That
+    meant a rule written mid-session was silently ignored until a new session —
+    which is indistinguishable from the feature being broken, and is exactly what
+    windro hit: the agent knew IDEA.md (present at build time) but never saw the
+    rule he added afterwards.
+    """
+
+    def _fingerprint(self, project):
+        from agent.prompt_builder import project_files_fingerprint
+
+        return project_files_fingerprint(str(project))
+
+    def test_fingerprint_changes_when_a_rule_is_added(self, project):
+        before = self._fingerprint(project)
+        rule(project, "a.md", "- new rule\n")
+
+        assert self._fingerprint(project) != before
+
+    def test_fingerprint_changes_when_a_rule_is_edited(self, project):
+        rule(project, "a.md", "- one\n")
+        before = self._fingerprint(project)
+        time.sleep(0.01)
+        rule(project, "a.md", "- one\n- two\n")
+
+        assert self._fingerprint(project) != before, (
+            "an edited rule file produced the same fingerprint, so the cached "
+            "system prompt would never rebuild and the edit would be ignored"
+        )
+
+    def test_fingerprint_changes_when_idea_md_changes(self, project):
+        before = self._fingerprint(project)
+        (project / "IDEA.md").write_text("intent\n", encoding="utf-8")
+
+        assert self._fingerprint(project) != before
+
+    def test_fingerprint_is_stable_when_nothing_changes(self, project):
+        """Otherwise every turn would rebuild and destroy the prefix cache."""
+        rule(project, "a.md", "- one\n")
+
+        assert self._fingerprint(project) == self._fingerprint(project)
+
+    def test_fingerprint_empty_without_a_cwd(self):
+        from agent.prompt_builder import project_files_fingerprint
+
+        assert project_files_fingerprint(None) == ""
+
+    def _agent(self, project):
+        from agent.prompt_builder import project_files_fingerprint
+
+        class StubAgent:
+            _cached_system_prompt = "BUILT EARLIER"
+            _cached_system_prompt_static = "S"
+            _memory_store = None
+
+        agent = StubAgent()
+        agent._project_files_fingerprint = project_files_fingerprint(str(project))
+        return agent
+
+    def test_edit_invalidates_the_cached_prompt(self, project, monkeypatch):
+        from agent.system_prompt import refresh_project_files_if_changed
+
+        rule(project, "a.md", "- one\n")
+        agent = self._agent(project)
+        monkeypatch.setattr("agent.runtime_cwd.resolve_context_cwd", lambda: project)
+
+        time.sleep(0.01)
+        rule(project, "a.md", "- one\n- two\n")
+
+        assert refresh_project_files_if_changed(agent) is True
+        assert agent._cached_system_prompt is None, (
+            "the cached prompt survived a rule edit, so the agent keeps running "
+            "on the old rules for the rest of the session"
+        )
+
+    def test_no_change_keeps_the_cache(self, project, monkeypatch):
+        """The prefix cache is expensive — never invalidate without cause."""
+        from agent.system_prompt import refresh_project_files_if_changed
+
+        rule(project, "a.md", "- one\n")
+        agent = self._agent(project)
+        monkeypatch.setattr("agent.runtime_cwd.resolve_context_cwd", lambda: project)
+
+        assert refresh_project_files_if_changed(agent) is False
+        assert agent._cached_system_prompt == "BUILT EARLIER"
+
+    def test_a_never_built_agent_is_left_alone(self, project, monkeypatch):
+        from agent.system_prompt import refresh_project_files_if_changed
+
+        class Fresh:
+            _cached_system_prompt = None
+            _cached_system_prompt_static = None
+            _memory_store = None
+
+        monkeypatch.setattr("agent.runtime_cwd.resolve_context_cwd", lambda: project)
+
+        assert refresh_project_files_if_changed(Fresh()) is False
+
+    def test_the_turn_path_calls_the_refresh(self):
+        """Without this wiring the fingerprint is computed and never used."""
+        import inspect
+
+        from agent import turn_context
+
+        src = inspect.getsource(turn_context)
+
+        assert "refresh_project_files_if_changed" in src, (
+            "agent/turn_context.py no longer refreshes project files before the "
+            "cached-prompt check, so mid-session rule edits are ignored again."
+        )
+
+
+class TestProjectRuleTool:
+    """The agent must be able to read and write rules itself.
+
+    Asked to "add a rule" it previously wrote a MEMORY entry, because memory was
+    the only write-a-fact affordance it had. Asked what its rules were it
+    refused, because they arrive inside the system prompt. Both are fixed by
+    giving it a tool that touches the files directly.
+    """
+
+    def _run(self, project, monkeypatch, **kwargs):
+        from tools.project_rule_tool import project_rule_tool
+
+        monkeypatch.setattr("agent.runtime_cwd.resolve_agent_cwd", lambda: project)
+        return json.loads(project_rule_tool(**kwargs))
+
+    def test_add_creates_the_rules_file(self, tmp_path, monkeypatch):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, capture_output=True)
+
+        result = self._run(tmp_path, monkeypatch, action="add", rule="always run the tests")
+
+        assert result["success"] is True
+        assert (tmp_path / ".hermes" / "rules" / "rules.md").read_text(encoding="utf-8") == (
+            "- always run the tests\n"
+        )
+
+    def test_added_rule_reaches_the_prompt(self, project, monkeypatch):
+        self._run(project, monkeypatch, action="add", rule="you are ochumaa")
+
+        assert "you are ochumaa" in load(project), (
+            "a rule the agent added itself did not load into the prompt"
+        )
+
+    def test_list_reads_from_disk(self, project, monkeypatch):
+        rule(project, "rules.md", "- one\n- two\n")
+
+        result = self._run(project, monkeypatch, action="list")
+
+        assert result["files"][0]["rules"] == ["one", "two"]
+        assert result["files"][0]["active"] is True
+
+    def test_list_marks_scoped_files_inactive(self, project, monkeypatch):
+        """So the agent never claims a rule is in force when it isn't."""
+        rule(project, "s.md", '---\nmode: glob\npaths: ["src/**"]\n---\n- scoped\n')
+
+        result = self._run(project, monkeypatch, action="list")
+
+        assert result["files"][0]["active"] is False
+
+    def test_list_on_a_project_with_no_rules(self, tmp_path, monkeypatch):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, capture_output=True)
+
+        result = self._run(tmp_path, monkeypatch, action="list")
+
+        assert result["success"] is True
+        assert result["files"] == []
+
+    def test_remove_by_index(self, project, monkeypatch):
+        rule(project, "rules.md", "- one\n- two\n")
+
+        result = self._run(project, monkeypatch, action="remove", index=0)
+
+        assert result["rules"] == ["two"]
+
+    def test_duplicate_add_is_a_no_op(self, project, monkeypatch):
+        self._run(project, monkeypatch, action="add", rule="same")
+        result = self._run(project, monkeypatch, action="add", rule="same")
+
+        assert result.get("unchanged") is True
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"action": "nope"},
+            {"action": "add", "rule": "   "},
+            {"action": "remove", "index": 99},
+            {"action": "add", "rule": "x", "file": "../escape.md"},
+            {"action": "add", "rule": "x", "file": "sub/dir.md"},
+        ],
+    )
+    def test_bad_input_is_rejected(self, project, monkeypatch, kwargs):
+        rule(project, "rules.md", "- one\n")
+
+        assert "error" in self._run(project, monkeypatch, **kwargs)
+
+    def test_registered_alongside_memory(self):
+        """It only gets chosen over `memory` if the model can see it."""
+        from toolsets import _HERMES_CORE_TOOLS
+
+        assert "project_rule" in _HERMES_CORE_TOOLS
+        assert "memory" in _HERMES_CORE_TOOLS
+
+    def test_description_steers_away_from_memory(self):
+        """The wording is the whole mechanism — assert it stays."""
+        from tools.project_rule_tool import PROJECT_RULE_SCHEMA
+
+        description = PROJECT_RULE_SCHEMA["description"].lower()
+
+        assert "memory" in description, "the description must contrast with memory"
+        assert "add a rule" in description
+
+
+class TestPromptLicensesDiscussion:
+    """The agent refused to say what its rules were. They are windro's own files;
+    refusing is both unhelpful and wrong."""
+
+    def test_header_says_the_rules_are_not_confidential(self, project):
+        rule(project, "a.md", "- one\n")
+
+        out = load(project)
+
+        assert "not confidential" in out
+        assert "project_rule" in out, "the header must point at the tool"

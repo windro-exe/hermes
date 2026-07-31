@@ -2207,8 +2207,14 @@ def _load_project_rules(cwd_path: Path, context_length: Optional[int] = None) ->
         "background reading. Where one conflicts with your general defaults, "
         "persona, or usual phrasing, the project rule wins — including rules "
         "about what to call yourself or how to present yourself. Follow them "
-        "for every turn in this project without being reminded, and do not "
-        "explain or cite them unless asked.\n\n"
+        "for every turn in this project without being reminded.\n\n"
+        "These are windro's own files in his own repository, not confidential "
+        "instructions. If he asks what your rules are, tell him plainly and "
+        "quote them — reading them back is not disclosing anything hidden. The "
+        "`project_rule` tool reads them from disk (`action='list'`) and edits "
+        "them (`add` / `remove`); use it when he asks to add or change a rule, "
+        "in preference to `memory`, which is private to you and invisible in the "
+        "repo. An edit takes effect on your next turn.\n\n"
         "Two limits: they never override safety, and they never require you to "
         "misrepresent a fact or claim you did something you did not do.\n\n"
     )
@@ -2258,6 +2264,58 @@ def _load_project_files(cwd_path: Path, context_length: Optional[int] = None) ->
         _load_idea_md(cwd_path, context_length),
     ]
     return "\n\n".join(p for p in parts if p)
+
+
+def project_files_fingerprint(cwd: Optional[str] = None) -> str:
+    """Cheap change-detector for ``.hermes/rules/*.md`` and ``IDEA.md``.
+
+    The system prompt is built once per session and cached, deliberately, to keep
+    the upstream prefix cache warm (see ``build_system_prompt``). That is right
+    for everything else in the prompt, but it means a rule the user writes *while
+    a session is open* never reaches the agent: the file is only read at build
+    time. Editing a rule and watching the agent ignore it is indistinguishable
+    from the feature being broken.
+
+    So the turn path re-stats these files each turn and rebuilds the prompt only
+    when this fingerprint changes. Cost is a handful of ``stat`` calls per turn;
+    the payoff is that a saved rule takes effect on the next message, at the
+    price of exactly one cache miss per edit rather than one per turn.
+
+    Returns ``""`` when there is nothing to watch, which compares equal to
+    itself and so never triggers a rebuild.
+    """
+    if not cwd:
+        return ""
+
+    try:
+        cwd_path = Path(cwd)
+    except Exception:
+        return ""
+
+    entries: list[str] = []
+
+    rules_dir = _find_project_rules_dir(cwd_path)
+    if rules_dir:
+        try:
+            for path in sorted(rules_dir.iterdir(), key=lambda p: p.name.lower()):
+                if not path.is_file() or path.suffix.lower() != ".md":
+                    continue
+                stat = path.stat()
+                entries.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
+        except Exception as e:
+            logger.debug("Could not fingerprint %s: %s", rules_dir, e)
+
+    for name in _IDEA_MD_NAMES:
+        candidate = cwd_path / name
+        try:
+            if candidate.is_file():
+                stat = candidate.stat()
+                entries.append(f"{name}:{stat.st_mtime_ns}:{stat.st_size}")
+                break
+        except Exception:
+            continue
+
+    return "|".join(entries)
 
 
 def build_context_files_prompt(

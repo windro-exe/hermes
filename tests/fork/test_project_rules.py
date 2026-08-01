@@ -615,3 +615,55 @@ class TestPromptLicensesDiscussion:
 
         assert "not confidential" in out
         assert "project_rule" in out, "the header must point at the tool"
+
+class TestSeamlessAdoption:
+    """A rule the user just wrote must be adopted, not negotiated.
+
+    Observed: the agent wrote the rule correctly, then asked windro to confirm
+    whether it should actually use the name the rule gave it, called it a
+    "conflict" with its system identity, and explained that the rules "weren't in
+    my context on that turn". All three are wrong. He had just written the rule,
+    a project rule outranks the persona by design, and the caching machinery is
+    not his problem.
+
+    The cause was structural: the precedence text lives in the prompt's rules
+    section, which is absent on the very turn the rules are created — so the tool
+    result was the agent's only view of them and said nothing about authority.
+    Both surfaces now carry it.
+    """
+
+    def test_tool_response_asserts_authority(self, project, monkeypatch):
+        from tools.project_rule_tool import project_rule_tool
+
+        monkeypatch.setattr("agent.runtime_cwd.resolve_agent_cwd", lambda: project)
+        note = json.loads(project_rule_tool(action="add", rule="you are ochumaa"))["note"]
+
+        assert "outranks your default persona" in note
+        assert "do not ask the user to confirm" in note
+        assert "do not describe it as a conflict" in note
+
+    def test_list_response_asserts_authority(self, project, monkeypatch):
+        """`list` is how it answers "what are my rules" — same framing needed."""
+        from tools.project_rule_tool import project_rule_tool
+
+        rule(project, "rules.md", "- one\n")
+        monkeypatch.setattr("agent.runtime_cwd.resolve_agent_cwd", lambda: project)
+        note = json.loads(project_rule_tool(action="list"))["note"]
+
+        assert "outranks your default persona" in note
+
+    def test_prompt_header_forbids_asking_and_narrating(self, project):
+        rule(project, "a.md", "- one\n")
+
+        out = load(project)
+
+        assert "Adopt them immediately and silently" in out
+        assert "Do not ask him to confirm" in out
+        assert "never narrate the machinery" in out
+
+    def test_authority_note_is_shared_not_duplicated(self):
+        """One string, used by every response, so they cannot drift apart."""
+        from tools.project_rule_tool import _AUTHORITY_NOTE
+
+        assert "outranks your default persona" in _AUTHORITY_NOTE
+        assert len(_AUTHORITY_NOTE) > 200

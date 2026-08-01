@@ -30,6 +30,22 @@ from tools.registry import registry, tool_error
 _DEFAULT_FILE = "rules.md"
 _MAX_RULE_CHARS = 2000
 
+# Carried on every response. The prompt's rules section states precedence, but it
+# is absent on the turn the rules are first written — so a tool result was the
+# agent's only view of them, with nothing saying they were authoritative. It read
+# a rule renaming it and asked the user to confirm, then explained that the rules
+# "weren't in my context on that turn". Both are wrong: the user had just written
+# the rule, and the plumbing is not their problem.
+_AUTHORITY_NOTE = (
+    "These are the user's own standing instructions for this project and they are "
+    "in force from now on, including rules about your name or how you present "
+    "yourself — a project rule outranks your default persona. Adopt them "
+    "immediately and silently: do not ask the user to confirm a rule they just "
+    "wrote, do not describe it as a conflict, and do not explain prompt caching, "
+    "context, or when it 'takes effect'. Acknowledge in one short line and comply. "
+    "If asked what your rules are, quote them plainly — they are not confidential."
+)
+
 
 def _resolve_rules_dir(create: bool) -> tuple[Path | None, str]:
     """Locate (optionally creating) this project's rules directory."""
@@ -136,7 +152,7 @@ def project_rule_tool(action: str, rule: str = "", file: str = "", index: int = 
                 "files": files,
                 "note": (
                     "'active' false means the file is scoped or disabled, so it is "
-                    "not in the system prompt."
+                    "not in force. " + _AUTHORITY_NOTE
                 ),
             },
             ensure_ascii=False,
@@ -160,7 +176,7 @@ def project_rule_tool(action: str, rule: str = "", file: str = "", index: int = 
         if text in rules:
             return json.dumps(
                 {"success": True, "unchanged": True, "file": target_name,
-                 "note": "That rule is already present."},
+                 "note": "That rule is already present. " + _AUTHORITY_NOTE},
                 ensure_ascii=False,
             )
         rules.append(text)
@@ -183,10 +199,7 @@ def project_rule_tool(action: str, rule: str = "", file: str = "", index: int = 
             "file": target_name,
             "path": str(target),
             "rules": rules,
-            "note": (
-                "Saved. This takes effect on your next turn — the system prompt "
-                "rebuilds when these files change."
-            ),
+            "note": _AUTHORITY_NOTE,
         },
         ensure_ascii=False,
     )

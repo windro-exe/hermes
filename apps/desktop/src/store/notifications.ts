@@ -24,10 +24,21 @@ export interface AppNotification {
   message: string
   detail?: string
   action?: NotificationAction
-  onDismiss?: () => void
+  onDismiss?: (reason: NotificationDismissReason) => void
   createdAt: number
   placement?: NotificationPlacement
 }
+
+/**
+ * Why a notification went away.
+ *
+ * `onDismiss` used to fire for every removal, so a handler could not tell "the
+ * user closed this" from "some unrelated code called clearNotifications()".
+ * That mattered for the update toast: it snoozed the update for 24h in its
+ * onDismiss, and clearNotifications() runs on prompt submit and session switch,
+ * so a routine action silently suppressed an update the user never saw.
+ */
+export type NotificationDismissReason = 'action' | 'programmatic' | 'user'
 
 export interface NotificationInput {
   id?: string
@@ -39,7 +50,7 @@ export interface NotificationInput {
   message: string
   detail?: string
   action?: NotificationAction
-  onDismiss?: () => void
+  onDismiss?: (reason: NotificationDismissReason) => void
   durationMs?: number
   placement?: NotificationPlacement
 }
@@ -178,15 +189,18 @@ export function notifyError(error: unknown, fallback: string): string {
   })
 }
 
-export function dismissNotification(id: string) {
+export function dismissNotification(
+  id: string,
+  reason: NotificationDismissReason = 'programmatic'
+) {
   window.clearTimeout(timers.get(id))
   timers.delete(id)
   const dismissed = $notifications.get().find(item => item.id === id)
   $notifications.set($notifications.get().filter(item => item.id !== id))
-  dismissed?.onDismiss?.()
+  dismissed?.onDismiss?.(reason)
 }
 
-export function clearNotifications() {
+export function clearNotifications(reason: NotificationDismissReason = 'programmatic') {
   for (const timer of timers.values()) {
     window.clearTimeout(timer)
   }
@@ -196,6 +210,6 @@ export function clearNotifications() {
   $notifications.set([])
 
   for (const item of all) {
-    item.onDismiss?.()
+    item.onDismiss?.(reason)
   }
 }

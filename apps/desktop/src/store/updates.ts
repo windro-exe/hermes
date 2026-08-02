@@ -70,91 +70,42 @@ export const resetUpdateApplyState = () => {
 }
 
 const UPDATE_TOAST_ID = 'desktop-update-available'
-// Snooze the UPDATE, not the clock.
-//
-// Upstream used a purely time-based snooze — dismissing recorded `now + 24h` and
-// nothing about WHICH update was dismissed. Their reason is sound for the
-// official repo (~100 commits/day, where a per-sha guard re-pops on every
-// commit), but it means dismissing one toast also swallows every genuinely NEW
-// update for the next 24 hours. On a fork, where each push is deliberate and
-// learning that it landed is the entire point, that is the wrong trade: a fix
-// pushed an hour after a dismissal is silently never announced.
-//
-// So the snooze now remembers the sha it dismissed:
-//   * the SAME update stays quiet for 24h after you close its toast
-//   * a DIFFERENT update notifies, subject only to a short burst floor that
-//     keeps a fast-moving branch from spamming right after a dismissal
-//
-// The storage key is new (the old one ended in `-until`), so any stale
-// time-only value from a previous build is ignored rather than needing a
-// migration — someone mid-cooldown gets their next real update announced.
-const UPDATE_TOAST_SNOOZE_KEY = 'hermes:update-toast-snooze'
-const UPDATE_TOAST_COOLDOWN_MS = 24 * 60 * 60 * 1000
-const UPDATE_TOAST_BURST_FLOOR_MS = 60 * 60 * 1000
 
-interface UpdateToastSnooze {
-  /** targetSha that was dismissed. Empty when the probe reported none. */
-  sha: string
-  /** Suppress this same sha until here. */
-  until: number
-  /** Suppress ANY update until here — burst guard for busy branches. */
-  floor: number
+// Dismissing an update hides it for THIS app run only.
+//
+// Two bugs sat here. The first was upstream's: a purely time-based snooze that
+// recorded `now + 24h` and nothing about WHICH update was dismissed, so
+// dismissing one toast swallowed every genuinely new update for a day.
+//
+// The second was mine, replacing it with a PERSISTED per-sha snooze. That still
+// wrote a 24h record to localStorage, and `onDismiss` fired for any removal —
+// including `clearNotifications()`, which runs on prompt submit and session
+// switch. So sending a message silently snoozed an update the user never saw.
+// Verified live over CDP: the check reported `behind: 1` correctly while
+// localStorage held a fresh snooze for that exact sha.
+//
+// Now: nothing is persisted. A dismissal is remembered in memory, keyed by the
+// sha it dismissed, and only when the dismissal actually came from the user
+// (see NotificationDismissReason — a programmatic clear no longer counts).
+// Consequences, which are the behaviour windro asked for:
+//   * a NEW commit always notifies, however recently something was dismissed
+//   * closing the toast keeps that same update quiet for the rest of the run
+//   * quitting and reopening re-announces it, until it is actually installed
+const dismissedUpdateShas = new Set<string>()
+
+function isUpdateToastSnoozed(sha: string): boolean {
+  return Boolean(sha) && dismissedUpdateShas.has(sha)
 }
 
 function snoozeUpdateToast(sha: string): void {
-  const now = Date.now()
-
-  persistString(
-    UPDATE_TOAST_SNOOZE_KEY,
-    JSON.stringify({
-      floor: now + UPDATE_TOAST_BURST_FLOOR_MS,
-      sha: sha || '',
-      until: now + UPDATE_TOAST_COOLDOWN_MS
-    } satisfies UpdateToastSnooze)
-  )
-}
-
-function readUpdateToastSnooze(): null | UpdateToastSnooze {
-  const raw = storedString(UPDATE_TOAST_SNOOZE_KEY)
-
-  if (!raw) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<UpdateToastSnooze>
-    const until = Number(parsed?.until)
-    const floor = Number(parsed?.floor)
-
-    if (!Number.isFinite(until) || !Number.isFinite(floor)) {
-      return null
-    }
-
-    return { floor, sha: String(parsed?.sha ?? ''), until }
-  } catch {
-    // Corrupt value — treat as no snooze rather than suppressing updates
-    // forever on unparseable state.
-    return null
+  if (sha) {
+    dismissedUpdateShas.add(sha)
   }
 }
 
-function isUpdateToastSnoozed(sha: string): boolean {
-  const snooze = readUpdateToastSnooze()
-
-  if (!snooze) {
-    return false
-  }
-
-  const now = Date.now()
-
-  // Burst guard: applies whatever the sha, so a branch landing commits in quick
-  // succession cannot re-toast immediately after a dismissal.
-  if (now < snooze.floor) {
-    return true
-  }
-
-  // Past the floor, only the update that was actually dismissed stays quiet.
-  return Boolean(sha) && sha === snooze.sha && now < snooze.until
+/** Test seam: forget dismissals, standing in for an app relaunch. */
+export function resetUpdateToastDismissals(): void {
+  dismissedUpdateShas.clear()
 }
 
 // Must match tui_gateway's DESKTOP_BACKEND_CONTRACT that this build was written
@@ -302,7 +253,15 @@ export function maybeNotifyUpdateAvailable(status: DesktopUpdateStatus | null) {
     id: UPDATE_TOAST_ID,
     kind: 'info',
     message: translateNow('notifications.updateReadyMessage', behind),
-    onDismiss: () => snoozeUpdateToast(targetSha),
+    // Only a real dismissal counts. A programmatic removal — clearNotifications()
+    // on prompt submit / session switch, or the toast being torn down because the
+    // update is being applied — must leave the update announceable, or the user
+    // never learns about it.
+    onDismiss: reason => {
+      if (reason !== 'programmatic') {
+        snoozeUpdateToast(targetSha)
+      }
+    },
     title: translateNow('notifications.updateReadyTitle')
   })
 }

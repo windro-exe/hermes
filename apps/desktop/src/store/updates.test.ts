@@ -43,6 +43,7 @@ vi.mock('@/hermes', () => ({
 
 const {
   maybeNotifyUpdateAvailable,
+  resetUpdateToastDismissals,
   checkBackendUpdates,
   $backendUpdateStatus,
   applyBackendUpdate,
@@ -67,13 +68,17 @@ const status = (over: Partial<DesktopUpdateStatus> = {}): DesktopUpdateStatus =>
   ...over
 })
 
-const lastToast = () => notifySpy.mock.calls.at(-1)?.[0] as { onDismiss: () => void }
+const lastToast = () =>
+  notifySpy.mock.calls.at(-1)?.[0] as { onDismiss: (reason?: string) => void }
 
 describe('maybeNotifyUpdateAvailable', () => {
   beforeEach(() => {
     storage.clear()
     notifySpy.mockClear()
     vi.useRealTimers()
+    // Dismissals live in module memory now (nothing is persisted), so they leak
+    // between cases unless cleared — same reason storage.clear() is here.
+    resetUpdateToastDismissals()
   })
 
   it('shows when an update is available and not snoozed', () => {
@@ -82,26 +87,43 @@ describe('maybeNotifyUpdateAvailable', () => {
     expect(notifySpy.mock.calls[0]?.[0]).toMatchObject({ icon: 'gift' })
   })
 
-  it('stays quiet for new commits once the toast was closed', () => {
+  // FORK DIVERGENCE. Upstream asserted the opposite of the two tests below: a
+  // dismissal started a 24h clock that suppressed EVERY later update, new commits
+  // included. That is the right call for the official repo, which lands on the
+  // order of a hundred commits a day — a per-commit toast there would be spam.
+  //
+  // This fork is one person's repo where every push is deliberate and finding out
+  // it landed is the whole point, so the rule is inverted: the same update stays
+  // quiet once you close it, a different one always speaks up, and nothing is
+  // persisted so quitting and reopening re-announces whatever is still pending.
+  // See src/__fork__/update-toast.test.ts for the full behaviour, and
+  // fork/changelog/entries/ for why.
+  it('still announces a DIFFERENT commit after one was dismissed', () => {
     maybeNotifyUpdateAvailable(status())
-    lastToast().onDismiss() // user closes it → cooldown starts
+    lastToast().onDismiss('user')
     notifySpy.mockClear()
 
-    // A different commit lands while still within the cooldown window.
-    maybeNotifyUpdateAvailable(status({ targetSha: 'sha-b', behind: 9 }))
+    maybeNotifyUpdateAvailable(status({ behind: 9, targetSha: 'sha-b' }))
+    expect(notifySpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the SAME commit quiet for the rest of the run', () => {
+    maybeNotifyUpdateAvailable(status())
+    lastToast().onDismiss('user')
+    notifySpy.mockClear()
+
+    maybeNotifyUpdateAvailable(status())
     expect(notifySpy).not.toHaveBeenCalled()
   })
 
-  it('re-shows once the cooldown elapses', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(0)
-
+  it('ignores a programmatic clear, which is not the user dismissing', () => {
+    // clearNotifications() runs on prompt submit and session switch. Treating
+    // that as a dismissal is what made the toast invisible in practice.
     maybeNotifyUpdateAvailable(status())
-    lastToast().onDismiss()
+    lastToast().onDismiss('programmatic')
     notifySpy.mockClear()
 
-    vi.setSystemTime(25 * 60 * 60 * 1000) // > 24h cooldown
-    maybeNotifyUpdateAvailable(status({ targetSha: 'sha-b' }))
+    maybeNotifyUpdateAvailable(status())
     expect(notifySpy).toHaveBeenCalledTimes(1)
   })
 

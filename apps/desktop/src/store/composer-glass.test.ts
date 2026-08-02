@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { COMPOSER_GLASS_DEFAULT, applyComposerGlass, composerGlassVars } from './composer-glass'
+import { applyComposerGlass, COMPOSER_GLASS_DEFAULT, composerGlassVars } from './composer-glass'
 
 describe('composerGlassVars', () => {
   it('is fully opaque with no filter work at 0', () => {

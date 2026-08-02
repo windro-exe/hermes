@@ -25,6 +25,7 @@ describe('messageContentText memo', () => {
     // part, so on a cache hit the first part is never touched again. That makes
     // "first-part reads" an exact signal for whether the map/join re-ran.
     let firstPartReads = 0
+
     const content: unknown[] = [
       {
         get text() {

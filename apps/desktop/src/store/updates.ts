@@ -363,6 +363,57 @@ export async function checkUpdates(): Promise<DesktopUpdateStatus | null> {
   }
 }
 
+/**
+ * Delay before the first background check, so a launch never waits on git.
+ *
+ * `checkUpdates` shells out to `git fetch`, which on a cold network can take
+ * seconds. Nothing about startup should block on it.
+ */
+const STARTUP_CHECK_DELAY_MS = 20_000
+
+/** Re-check every six hours for a long-running window. */
+const BACKGROUND_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+let backgroundChecksStarted = false
+
+/**
+ * Start checking for updates in the background.
+ *
+ * Without this the update toast is unreachable: `checkUpdates` was only ever
+ * called from the Settings → About page and the updates overlay, so a check only
+ * happened once the user was already looking at the update UI — at which point a
+ * toast tells them nothing they cannot already see. An install that never opens
+ * that page never discovers an update at all, which matters most for someone
+ * handed a build rather than building it themselves.
+ *
+ * `maybeNotifyUpdateAvailable` (called inside `checkUpdates`) keeps its own
+ * 24-hour persisted snooze, so making checks routine does not make the toast
+ * nag: dismissing it, or opening the updates window from it, silences it for a
+ * day.
+ *
+ * Idempotent — repeated calls are ignored, so a remount cannot stack timers.
+ */
+export function startBackgroundUpdateChecks(): void {
+  if (backgroundChecksStarted || typeof window === 'undefined') {
+    return
+  }
+
+  backgroundChecksStarted = true
+
+  const run = () => {
+    // A check while an update is being applied would race the apply and could
+    // re-toast mid-restart.
+    if ($updateApply.get().applying) {
+      return
+    }
+
+    void checkUpdates().catch(() => undefined)
+  }
+
+  window.setTimeout(run, STARTUP_CHECK_DELAY_MS)
+  window.setInterval(run, BACKGROUND_CHECK_INTERVAL_MS)
+}
+
 export async function applyUpdates(opts: DesktopUpdateApplyOptions = {}): Promise<DesktopUpdateApplyResult> {
   const bridge = window.hermesDesktop?.updates
 

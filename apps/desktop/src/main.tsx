@@ -44,6 +44,12 @@ if (winParam === 'overlay') {
 } else if (winParam === 'quick') {
   void import('./app/quick-entry/quick-entry-root').then(({ mountQuickEntry }) => mountQuickEntry())
 } else {
+  // Main window only — the pet overlay and quick-entry windows share this entry
+  // point, and letting them check too would mean duplicate toasts for one
+  // update. Deliberately outside React: it must not restart on a remount, and
+  // StrictMode double-invokes effects in development.
+  void import('./store/updates').then(({ startBackgroundUpdateChecks }) => startBackgroundUpdateChecks())
+
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary label="root">

@@ -118,6 +118,8 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-02 | Fixed | [`hermes update` no longer resets away unpushed commits](entries/2026-08-02-03-update-unpushed-guard.md) | current |
+| 2026-08-02 | Fixed | [Update toast fired, then a routine action silently dismissed it](entries/2026-08-02-02-update-toast-dismissal-reason.md) | current |
 | 2026-08-02 | Fixed | [Update toast fired and was silently dismissed](entries/2026-08-02-01-update-toast-invisible.md) | current |
 | 2026-08-02 | Changed | [Installer points at the fork, so pushing is the update mechanism](entries/2026-08-02-01-installer-points-at-fork.md) | current |
 | 2026-07-31 | Fixed | [Project rules were read once per session; added the project_rule tool](entries/2026-07-31-01-rules-mid-session-and-rule-tool.md) | current |

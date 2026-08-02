@@ -7880,6 +7880,36 @@ def _update_via_zip(args):
     _finish_dashboard_update_cleanup(node_failures)
 
 
+def _count_commits_not_on_remote(
+    git_cmd: list[str], cwd: Path, branch: str
+) -> int:
+    """Commits reachable from HEAD that ``origin/<branch>`` does not have.
+
+    Used by the update path to decide whether a diverged history can be safely
+    reset to the remote. A non-zero count means local carries work that exists
+    nowhere else, so resetting would destroy it — unlike uncommitted edits,
+    which the autostash saves.
+
+    Fails SAFE: any probe error returns 1 ("assume there is something to
+    protect"), because the cost of a false positive is a refused update the
+    user can resolve, and the cost of a false negative is deleted commits.
+    """
+    probe = subprocess.run(
+        git_cmd + ["rev-list", "--count", f"origin/{branch}..HEAD"],
+        cwd=cwd,
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+    )
+
+    if probe.returncode != 0:
+        return 1
+
+    try:
+        return int((probe.stdout or "0").strip() or 0)
+    except ValueError:
+        return 1
+
+
 def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> Optional[str]:
     status = subprocess.run(
         git_cmd + ["status", "--porcelain"],
@@ -12096,6 +12126,70 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 text=True, encoding="utf-8", errors="replace",
             )
             if pull_result.returncode != 0:
+                # ── Fork guard: never reset away unpushed commits ──
+                #
+                # The reset below is correct for the case it was written for: a
+                # mangled checkout, or upstream force-pushing, where local
+                # history is worth less than the remote's. It is destructive in a
+                # case its author did not have in mind — a fork whose local
+                # branch carries commits that exist nowhere else. `git stash`
+                # above saves uncommitted edits, but a COMMIT that has not been
+                # pushed is not stashed and not on any remote: reset --hard drops
+                # it, and only git's unreachable-object grace period gets it back.
+                #
+                # windro hit this by pressing Update while a finished fix sat
+                # unpushed on main. Local was 1 ahead / 1 behind, ff-only failed,
+                # and the reset moved HEAD onto the remote commit. The work was
+                # recoverable from reflog, but that is luck, not design.
+                #
+                # So: refuse only when local is genuinely ahead. Divergence with
+                # nothing unique locally (the force-push case) still resets as
+                # before, which keeps the recovery path intact.
+                ahead_count = _count_commits_not_on_remote(
+                    git_cmd, PROJECT_ROOT, branch
+                )
+
+                if ahead_count > 0:
+                    print()
+                    print(
+                        f"✗ Update stopped: {ahead_count} local commit(s) on "
+                        f"'{branch}' are not on origin."
+                    )
+                    print(
+                        "  Fast-forward is not possible, and resetting to the "
+                        "remote would delete them."
+                    )
+                    print()
+                    print("  Your commits:")
+                    log_probe = subprocess.run(
+                        git_cmd + [
+                            "log", "--oneline", "--no-decorate",
+                            f"origin/{branch}..HEAD",
+                        ],
+                        cwd=PROJECT_ROOT,
+                        capture_output=True,
+                        text=True, encoding="utf-8", errors="replace",
+                    )
+                    for line in (log_probe.stdout or "").splitlines()[:10]:
+                        print(f"    {line}")
+                    print()
+                    print("  Pick one, then re-run the update:")
+                    print(f"    git push origin {branch}        # keep them")
+                    print(f"    git rebase origin/{branch}      # replay onto the remote")
+                    print(
+                        f"    git reset --hard origin/{branch}  # discard them "
+                        "(destructive)"
+                    )
+                    if auto_stash_ref:
+                        print()
+                        print("  Restoring the changes that were stashed for this update...")
+                        _restore_stashed_changes(
+                            git_cmd,
+                            PROJECT_ROOT,
+                            auto_stash_ref,
+                        )
+                    sys.exit(1)
+
                 # ff-only failed — local and remote have diverged (e.g. upstream
                 # force-pushed or rebase).  Since local changes are already
                 # stashed, reset to match the remote exactly.

@@ -560,14 +560,46 @@ export interface CreateProjectInput {
 // Generate a project idea via the stateless llm.oneshot RPC (inherits the live
 // session's model when one exists). Returns "" on failure so the caller can just
 // leave the field untouched. The "🎲" affordance in the new-project dialog.
-export async function generateProjectIdea(name: string): Promise<string> {
+/**
+ * Fill in or sharpen the IDEA.md draft.
+ *
+ * Two distinct jobs depending on whether the user has written anything:
+ *
+ * - `draft` empty → invent a project (the original "surprise me" behaviour).
+ * - `draft` present → REFINE what they wrote. Their rough idea is the spec, not
+ *   a prompt for something else; throwing it away and returning an unrelated
+ *   idea is the whole complaint this addresses. Temperature drops for the
+ *   refine path because the goal is a faithful tightening, not novelty.
+ */
+export async function generateProjectIdea(name: string, draft = ''): Promise<string> {
+  const rough = draft.trim()
+  const projectName = name.trim()
+
   try {
     const res = await gatewayRequest<{ text: string }>('llm.oneshot', {
-      instructions:
-        'You generate a single, concrete project idea as a short IDEA.md body: a one-line summary, ' +
-        'then 3-5 bullet goals. No preamble, no code fences, under 120 words.',
-      input: name.trim() ? `Project name: ${name.trim()}` : 'Surprise me with a fun project.',
-      temperature: 1.0
+      // IDEA.md answers "what is this and what is it for" — intent the agent
+      // cannot recover by reading the code. It is explicitly NOT a task list:
+      // an earlier version asked for "3-5 bullet goals" and the model duly
+      // returned imperative bullets ("Build a TUS as the primary interface…"),
+      // which reads like a rules file and belongs in .hermes/rules instead.
+      instructions: rough
+        ? 'Turn a rough project idea into a short project brief, in prose. Keep the ' +
+          "user's concept and any specifics they named — do NOT replace it with a " +
+          'different idea and do not invent features. Say what the thing is, who ' +
+          'it is for, and what would make it good. Write 2-4 flowing sentences. ' +
+          'No headings, no bullet points, no task list, no requirements, no ' +
+          'imperatives like "Build" or "Use", no preamble, no code fences. ' +
+          'Under 80 words.'
+        : 'Invent one concrete project and describe it as a short brief, in prose: ' +
+          'what it is, who it is for, and what would make it good. Write 2-4 ' +
+          'flowing sentences. No headings, no bullet points, no task list, no ' +
+          'imperatives, no preamble, no code fences. Under 80 words.',
+      input: rough
+        ? `${projectName ? `Project name: ${projectName}\n\n` : ''}Rough idea to sharpen:\n${rough}`
+        : projectName
+          ? `Project name: ${projectName}`
+          : 'Surprise me with a fun project.',
+      temperature: rough ? 0.4 : 1
     })
 
     return (res.text || '').trim()

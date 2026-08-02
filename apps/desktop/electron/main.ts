@@ -10636,7 +10636,7 @@ ipcMain.handle('hermes:fs:rename', async (_event, targetPath, newName) => {
 // is hardened (resolveRequestedPathForIpc) and the parent must already exist —
 // this never creates directory trees or escapes the allowed roots, and content
 // is size-capped so it can't be abused as a bulk-write primitive.
-ipcMain.handle('hermes:fs:writeText', async (_event, filePath, content) => {
+ipcMain.handle('hermes:fs:writeText', async (_event, filePath, content, options) => {
   const raw = String(filePath || '').trim()
 
   if (!raw) {
@@ -10651,8 +10651,17 @@ ipcMain.handle('hermes:fs:writeText', async (_event, filePath, content) => {
 
   const resolved = resolveRequestedPathForIpc(expandUserPath(raw), { purpose: 'Write text file' })
 
-  if (!directoryExists(path.dirname(resolved))) {
-    throw new Error('Parent directory does not exist')
+  const parent = path.dirname(resolved)
+
+  if (!directoryExists(parent)) {
+    // The guard stays the default: a typo'd path must not silently create a
+    // deep tree. Callers that legitimately own a nested location (the project
+    // rules dir, .hermes/rules) opt in explicitly instead.
+    if (!options || options.mkdirp !== true) {
+      throw new Error('Parent directory does not exist')
+    }
+
+    await fs.promises.mkdir(parent, { recursive: true })
   }
 
   await fs.promises.writeFile(resolved, text, 'utf8')

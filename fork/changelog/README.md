@@ -118,6 +118,9 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-07-31 | Fixed | [Project rules were read once per session; added the project_rule tool](entries/2026-07-31-01-rules-mid-session-and-rule-tool.md) | current |
+| 2026-07-29 | Added | [Project rules and IDEA.md, editable entirely in the UI](entries/2026-07-29-02-project-rules-ui.md) | current |
+| 2026-07-29 | Added | [Per-project rules directory and IDEA.md loading](entries/2026-07-29-01-project-rules-loader.md) | current |
 | 2026-07-29 | Fixed | [Composer glass was invisible — dark-on-dark needs a brightness lift](entries/2026-07-29-02-composer-glass-visibility.md) | current |
 | 2026-07-29 | Performance | [Scroll jank: timeline tracker measured every message every frame (21 -> 44 fps)](entries/2026-07-29-01-timeline-scroll-offsets.md) | current |
 | 2026-07-28 | Changed | [Composer glass: less transparent by default, user-adjustable lever](entries/2026-07-28-02-composer-glass-setting.md) | corrected by 2026-07-29-02 |

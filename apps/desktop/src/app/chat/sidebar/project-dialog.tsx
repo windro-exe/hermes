@@ -136,7 +136,9 @@ export function ProjectDialog() {
     setGeneratingIdea(true)
 
     try {
-      const text = await generateProjectIdea(name)
+      // Pass the current draft so a rough idea gets sharpened instead of
+      // replaced. Empty box still means "invent one".
+      const text = await generateProjectIdea(name, idea)
 
       if (text) {
         setIdea(text)
@@ -248,6 +250,15 @@ export function ProjectDialog() {
                 onGenerate={() => void generateIdea()}
               />
             </div>
+            {/* The GenerateButton's spinner is a 12px icon in the textarea's
+                corner — easy to miss, so a request looked like it did nothing.
+                This states it plainly while the one-shot call is in flight. */}
+            {generatingIdea && (
+              <p className="flex items-center gap-1.5 text-[0.6875rem] text-(--ui-text-secondary)">
+                <Codicon name="loading" size="0.75rem" spinning />
+                <span>{p.ideaGenerating}</span>
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-1">
               {templates.map(template => (
                 <button

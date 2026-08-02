@@ -52,6 +52,10 @@ _HERMES_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # This project's standing rules (.hermes/rules/*.md). Sits next to `memory`
+    # on purpose: "add a rule" must resolve to the versioned project file, not a
+    # private memory entry, and the model only picks correctly if it can see both.
+    "project_rule",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the
@@ -360,6 +364,12 @@ TOOLSETS = {
             "browser_press", "browser_get_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
+            # Must sit beside `memory` here, not only in _HERMES_CORE_TOOLS: the
+            # desktop app and `hermes --tui` collapse to this posture toolset
+            # (see tui_gateway/server.py::_load_enabled_toolsets), so a tool
+            # missing from this list is invisible in the GUI. Without it, "add a
+            # rule" resolves to memory or a hand-written AGENTS.md.
+            "project_rule",
             "session_search", "clarify",
             "execute_code", "delegate_task",
         ],
@@ -392,6 +402,7 @@ TOOLSETS = {
             "browser_press", "browser_get_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
+            "project_rule",
             "session_search",
             "execute_code", "delegate_task",
         ],
@@ -418,6 +429,7 @@ TOOLSETS = {
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             # Planning & memory
             "todo", "memory",
+            "project_rule",
             # Session history search
             "session_search",
             # Code execution + delegation

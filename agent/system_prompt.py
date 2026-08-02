@@ -26,6 +26,7 @@ Pure helpers that read the agent's state.  AIAgent keeps thin forwarders.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -487,12 +488,25 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         # (developing Hermes). Every other surface (desktop chat panel,
         # gateway daemons) self-spawns into the install tree, where the
         # fallback would inject this repo's contributor AGENTS.md (#64590).
+        _context_cwd = resolve_context_cwd()
         context_files_prompt = _r.build_context_files_prompt(
-            cwd=resolve_context_cwd(), skip_soul=_soul_loaded,
+            cwd=_context_cwd, skip_soul=_soul_loaded,
             context_length=_ctx_len,
             allow_install_tree_fallback=agent.platform in ("cli", "tui"))
         if context_files_prompt:
             context_parts.append(context_files_prompt)
+
+        # Remember the state of the project rules / IDEA.md that this prompt was
+        # built from, so the turn path can notice an edit and rebuild. Without
+        # this the files are read once per session and a rule saved mid-session
+        # is silently ignored until a new session — see
+        # prompt_builder.project_files_fingerprint.
+        try:
+            agent._project_files_fingerprint = _r.project_files_fingerprint(
+                str(_context_cwd) if _context_cwd else None
+            )
+        except Exception:
+            agent._project_files_fingerprint = ""
 
     # ── Volatile tier (changes per session/turn — never cached) ───
     volatile_parts: List[str] = []
@@ -580,6 +594,47 @@ def invalidate_system_prompt(agent: Any) -> None:
     agent._cached_system_prompt_static = None
     if agent._memory_store:
         agent._memory_store.load_from_disk()
+
+
+def refresh_project_files_if_changed(agent: Any) -> bool:
+    """Drop the cached prompt when this project's rules or IDEA.md changed.
+
+    The cached prompt is what keeps the provider's prefix cache warm, so it is
+    never rebuilt casually. This is the one exception: the user (or the agent
+    itself, via the rule tool) just changed a file whose entire purpose is to
+    steer this session. Ignoring it until a new session makes the feature look
+    broken — that is the single most-reported bug in every tool that ships
+    project rules.
+
+    Returns True when the prompt was invalidated. Costs a few ``stat`` calls per
+    turn and one cache miss per edit; a no-op when nothing changed.
+    """
+    from agent.runtime_cwd import resolve_context_cwd
+
+    try:
+        from agent import prompt_builder as _r
+
+        cwd = resolve_context_cwd()
+        current = _r.project_files_fingerprint(str(cwd) if cwd else None)
+    except Exception:
+        return False
+
+    previous = getattr(agent, "_project_files_fingerprint", None)
+
+    # None means no prompt has been built yet — nothing to invalidate, and the
+    # upcoming build will record the fingerprint itself.
+    if previous is None or current == previous:
+        return False
+
+    # This module has no module-level logger; use the agent's own status channel
+    # so the user sees WHY a cache miss happened, and log for diagnosis.
+    logging.getLogger(__name__).info(
+        "project rules/IDEA.md changed — rebuilding the system prompt"
+    )
+    agent._project_files_fingerprint = current
+    invalidate_system_prompt(agent)
+
+    return True
 
 
 def format_tools_for_system_message(agent: Any) -> str:

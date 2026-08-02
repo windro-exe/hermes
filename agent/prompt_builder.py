@@ -2013,6 +2013,317 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
     )
 
 
+# =========================================================================
+# Project files: .hermes/rules/*.md + IDEA.md
+#
+# These load as their OWN section, alongside the first-match-wins chain above
+# rather than inside it. That chain is deliberate (HERMES.md overrides
+# AGENTS.md overrides CLAUDE.md), and folding these in would break the
+# override semantics people rely on.
+#
+# Why only these two kinds of file, and not a generated project overview:
+# "Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for Coding
+# Agents?" (arXiv 2602.11988) measured context files on SWE-bench and found
+# they do not generally improve task success while adding >20% inference cost —
+# but with a split result that matters here. Instructions ARE followed well;
+# repository OVERVIEWS (architecture tours, dependency lists, directory
+# layouts) are not helpful. So this loads rules (instructions) and IDEA.md
+# (intent the agent cannot derive by reading the repo), and deliberately does
+# not generate a project summary.
+# =========================================================================
+
+_PROJECT_RULES_DIR = ".hermes/rules"
+# Cap on rule files read from the directory. A runaway directory would
+# otherwise silently balloon every prompt in the project.
+_PROJECT_RULES_MAX_FILES = 32
+_IDEA_MD_NAMES = ("IDEA.md", "idea.md")
+
+# Frontmatter keys that scope a rule to certain files. Parsed and reserved, but
+# NOT yet honoured — see _rule_is_always_on for why glob gating cannot work in
+# this codebase today.
+_RULE_PATH_KEYS = ("paths", "globs", "applyto")
+_RULE_MODE_KEYS = ("mode", "trigger")
+_RULE_ALWAYS_MODES = {"always", "always_on", "alwayson", "always-apply", "alwaysapply"}
+
+
+def _parse_rule_frontmatter(content: str) -> dict:
+    """Parse a rule file's YAML frontmatter into a dict of lowercased keys.
+
+    Returns ``{}`` when there is no frontmatter, and — deliberately — also when
+    the YAML is malformed. Cline documents the same fail-open behaviour: a rule
+    with a broken header stays active rather than silently vanishing, because a
+    rule that disappears without an error is the single most-reported failure
+    mode in every tool that ships this feature.
+    """
+    text = content.lstrip("\ufeff")
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    block = text[3:end]
+    try:
+        import yaml
+
+        parsed = yaml.safe_load(block)
+    except Exception:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(k).strip().lower(): v for k, v in parsed.items()}
+
+
+def _rule_is_always_on(frontmatter: dict) -> bool:
+    """Whether a rule file should be injected into every prompt.
+
+    v1 injects always-on rules only. Glob-scoped rules are recognised and
+    skipped rather than silently treated as always-on, because injecting a rule
+    the author scoped to ``*.test.ts`` into every prompt is worse than not
+    loading it.
+
+    Glob gating is not implemented, and the reason is structural rather than
+    lazy: the system prompt is built BEFORE the agent reads anything, so on the
+    first turn there is no file set to match globs against. Evaluating them
+    later would mean rewriting the prompt mid-session, and these files sit in
+    the cached prefix — so every re-injection would invalidate the whole
+    conversation's cache. IDE-based tools (Cursor, Copilot) can glob-gate
+    because they already know which files are open; a gateway agent does not.
+
+    No frontmatter means always-on. That matches Cline and Claude Code;
+    Copilot's inverted default (no selector means never auto-loaded) is a
+    documented source of "why isn't my rule working".
+    """
+    if not frontmatter:
+        return True
+    for key in _RULE_MODE_KEYS:
+        raw = frontmatter.get(key)
+        if raw is None:
+            continue
+        mode = str(raw).strip().lower().replace(" ", "_")
+        if mode in _RULE_ALWAYS_MODES:
+            return True
+        # An explicit non-always mode (glob / manual / model_decision) opts out.
+        return False
+    # `alwaysApply: true` (Cursor's spelling) wins over any path scoping, and
+    # Cursor's own docs say globs and description are ignored when it is set.
+    always_apply = frontmatter.get("alwaysapply")
+    if isinstance(always_apply, bool):
+        return always_apply
+    # No mode given, but path scoping present -> the author scoped it.
+    for key in _RULE_PATH_KEYS:
+        value = frontmatter.get(key)
+        if value not in (None, "", [], {}):
+            return False
+    return True
+
+
+def _find_project_rules_dir(cwd: Path) -> Optional[Path]:
+    """Nearest ``.hermes/rules`` directory, cwd first then up to the git root.
+
+    Mirrors :func:`_find_hermes_md`, including its guard: with no git root only
+    *cwd* is checked, so a stray ``.hermes/rules`` in a parent like ``/tmp`` or
+    a home directory can never be picked up.
+    """
+    stop_at = _find_git_root(cwd)
+    current = cwd.resolve()
+    search_dirs = [current, *current.parents] if stop_at else [current]
+
+    for directory in search_dirs:
+        candidate = directory / _PROJECT_RULES_DIR
+        if candidate.is_dir():
+            return candidate
+        if stop_at and directory == stop_at:
+            break
+    return None
+
+
+def _load_project_rules(cwd_path: Path, context_length: Optional[int] = None) -> str:
+    """Load always-on rules from ``.hermes/rules/*.md``.
+
+    Files are sorted by name, and that ordering is load-bearing rather than
+    cosmetic: the injected text sits in the cached prompt prefix, so a
+    filesystem-dependent order would produce a different prompt run to run and
+    miss the cache every time.
+    """
+    rules_dir = _find_project_rules_dir(cwd_path)
+    if not rules_dir:
+        return ""
+
+    try:
+        files = sorted(
+            (p for p in rules_dir.iterdir() if p.is_file() and p.suffix.lower() == ".md"),
+            key=lambda p: p.name.lower(),
+        )
+    except Exception as e:
+        logger.debug("Could not list %s: %s", rules_dir, e)
+        return ""
+
+    blocks: list[str] = []
+    skipped_scoped = 0
+
+    for path in files[:_PROJECT_RULES_MAX_FILES]:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.debug("Could not read %s: %s", path, e)
+            continue
+
+        frontmatter = _parse_rule_frontmatter(raw)
+        if not _rule_is_always_on(frontmatter):
+            skipped_scoped += 1
+            continue
+
+        body = _strip_yaml_frontmatter(raw).strip()
+        if not body:
+            continue
+
+        # Same prompt-injection scan the other context files get. Rule files are
+        # user-authored but land verbatim in the system prompt, so they are an
+        # injection surface like any other.
+        label = f"{_PROJECT_RULES_DIR}/{path.name}"
+        body = _scan_context_content(body, label)
+        blocks.append(f"### {path.name}\n\n{body}")
+
+    if not blocks:
+        return ""
+
+    note = ""
+    if skipped_scoped:
+        note = (
+            f"\n\n_({skipped_scoped} file-scoped rule(s) in {_PROJECT_RULES_DIR} "
+            "were not loaded: path-scoped rules are not active yet.)_"
+        )
+
+    # Precedence has to be stated, not implied. Without it these rules arrive
+    # under a generic "project context ... should be followed" wrapper, which
+    # loses to any identity claim in the persona: a rule renaming the agent was
+    # simply ignored in favour of "You are Hermes". The user writing a file in
+    # their own project is a deliberate, specific instruction and should beat a
+    # general default — so say so explicitly, and bound it so this cannot be
+    # used to talk the agent out of its safety rules.
+    header = (
+        f"## Project rules ({_PROJECT_RULES_DIR})\n\n"
+        "windro wrote these for THIS project. They are direct instructions, not "
+        "background reading. Where one conflicts with your general defaults, "
+        "persona, or usual phrasing, the project rule wins — including rules "
+        "about what to call yourself or how to present yourself. Follow them "
+        "for every turn in this project without being reminded.\n\n"
+        "Adopt them immediately and silently. Do not ask him to confirm a rule he "
+        "already wrote, do not present a rule as a conflict with your persona — it "
+        "simply wins — and never narrate the machinery: no mention of prompt "
+        "caching, context windows, which turn a rule 'takes effect' on, or that "
+        "the rules were not loaded earlier. Acknowledge in one short line, then "
+        "behave accordingly.\n\n"
+        "These are windro's own files in his own repository, not confidential "
+        "instructions. If he asks what your rules are, tell him plainly and "
+        "quote them — reading them back is not disclosing anything hidden. The "
+        "`project_rule` tool reads them from disk (`action='list'`) and edits "
+        "them (`add` / `remove`); use it when he asks to add or change a rule, "
+        "in preference to `memory`, which is private to you and invisible in the "
+        "repo.\n\n"
+        "Two limits: they never override safety, and they never require you to "
+        "misrepresent a fact or claim you did something you did not do.\n\n"
+    )
+    result = header + "\n\n".join(blocks) + note
+    return _truncate_content(
+        result,
+        _PROJECT_RULES_DIR,
+        context_length=context_length,
+        read_path=str(rules_dir),
+    )
+
+
+def _load_idea_md(cwd_path: Path, context_length: Optional[int] = None) -> str:
+    """Load ``IDEA.md`` — the project's intent, in the user's own words.
+
+    The desktop's new-project dialog has always written this file (free-text
+    box, starter pills, and a generate button), but nothing ever read it: it
+    was write-only. For a brand-new or empty project it is the only context
+    that exists at all, and it is precisely the kind of information the agent
+    cannot recover by reading the repository.
+    """
+    for name in _IDEA_MD_NAMES:
+        candidate = cwd_path / name
+        if not candidate.is_file():
+            continue
+        try:
+            content = _strip_yaml_frontmatter(
+                candidate.read_text(encoding="utf-8")
+            ).strip()
+            if not content:
+                return ""
+            content = _scan_context_content(content, name)
+            result = f"## {name} (what this project is for)\n\n{content}"
+            return _truncate_content(
+                result, name, context_length=context_length,
+                read_path=str(candidate),
+            )
+        except Exception as e:
+            logger.debug("Could not read %s: %s", candidate, e)
+    return ""
+
+
+def _load_project_files(cwd_path: Path, context_length: Optional[int] = None) -> str:
+    """Combined rules + IDEA.md section, or ``""`` when neither exists."""
+    parts = [
+        _load_project_rules(cwd_path, context_length),
+        _load_idea_md(cwd_path, context_length),
+    ]
+    return "\n\n".join(p for p in parts if p)
+
+
+def project_files_fingerprint(cwd: Optional[str] = None) -> str:
+    """Cheap change-detector for ``.hermes/rules/*.md`` and ``IDEA.md``.
+
+    The system prompt is built once per session and cached, deliberately, to keep
+    the upstream prefix cache warm (see ``build_system_prompt``). That is right
+    for everything else in the prompt, but it means a rule the user writes *while
+    a session is open* never reaches the agent: the file is only read at build
+    time. Editing a rule and watching the agent ignore it is indistinguishable
+    from the feature being broken.
+
+    So the turn path re-stats these files each turn and rebuilds the prompt only
+    when this fingerprint changes. Cost is a handful of ``stat`` calls per turn;
+    the payoff is that a saved rule takes effect on the next message, at the
+    price of exactly one cache miss per edit rather than one per turn.
+
+    Returns ``""`` when there is nothing to watch, which compares equal to
+    itself and so never triggers a rebuild.
+    """
+    if not cwd:
+        return ""
+
+    try:
+        cwd_path = Path(cwd)
+    except Exception:
+        return ""
+
+    entries: list[str] = []
+
+    rules_dir = _find_project_rules_dir(cwd_path)
+    if rules_dir:
+        try:
+            for path in sorted(rules_dir.iterdir(), key=lambda p: p.name.lower()):
+                if not path.is_file() or path.suffix.lower() != ".md":
+                    continue
+                stat = path.stat()
+                entries.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
+        except Exception as e:
+            logger.debug("Could not fingerprint %s: %s", rules_dir, e)
+
+    for name in _IDEA_MD_NAMES:
+        candidate = cwd_path / name
+        try:
+            if candidate.is_file():
+                stat = candidate.stat()
+                entries.append(f"{name}:{stat.st_mtime_ns}:{stat.st_size}")
+                break
+        except Exception:
+            continue
+
+    return "|".join(entries)
+
+
 def build_context_files_prompt(
     cwd: Optional[str] = None,
     skip_soul: bool = False,
@@ -2068,6 +2379,7 @@ def build_context_files_prompt(
             cwd_path,
         )
         project_context = ""
+        project_files = ""
     else:
         # Priority-based project context: first match wins
         project_context = (
@@ -2076,8 +2388,15 @@ def build_context_files_prompt(
             or _load_claude_md(cwd_path, context_length)
             or _load_cursorrules(cwd_path, context_length)
         )
+        # .hermes/rules/*.md + IDEA.md load additively, as their own section:
+        # they complement whichever file won the chain above rather than
+        # competing with it. Inside this branch so they honour the same
+        # install-tree guard.
+        project_files = _load_project_files(cwd_path, context_length)
     if project_context:
         sections.append(project_context)
+    if project_files:
+        sections.append(project_files)
 
     # SOUL.md from HERMES_HOME only — skip when already loaded as identity
     if not skip_soul:

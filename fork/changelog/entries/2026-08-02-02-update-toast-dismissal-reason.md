@@ -5,7 +5,7 @@
 **Branch:** `main`
 
 **Supersedes** the persisted-snooze design in
-`entries/2026-08-02-01-update-toast-snooze.md` — that entry's mechanism is
+`entries/2026-08-02-01-update-toast-invisible.md` — that entry's mechanism is
 removed here, for the reasons below.
 
 <!-- Commit sha omitted: ships in the commit it describes. Find it with:

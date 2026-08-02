@@ -43,8 +43,13 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
+# FORK: install from windro's fork, not NousResearch. The clone's `origin` is
+# what self-update fetches from, so this is what makes a fork install track the
+# fork. Keep in step with scripts/install.ps1 ($RepoSlug) and the raw URL in
+# apps/desktop/electron/bootstrap-runner.ts.
+REPO_SLUG="windro-xdd/hermes-agent"
+REPO_URL_SSH="git@github.com:${REPO_SLUG}.git"
+REPO_URL_HTTPS="https://github.com/${REPO_SLUG}.git"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an

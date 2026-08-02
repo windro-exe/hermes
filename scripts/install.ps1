@@ -136,8 +136,20 @@ foreach ($tmpVar in @('TEMP', 'TMP')) {
 # Configuration
 # ============================================================================
 
-$RepoUrlSsh = "git@github.com:NousResearch/hermes-agent.git"
-$RepoUrlHttps = "https://github.com/NousResearch/hermes-agent.git"
+# FORK: install from windro's fork, not NousResearch.
+#
+# This is the single decision that makes the fork self-updating. install.ps1
+# clones $RepoUrlHttps into the managed checkout, and that clone's `origin` is
+# what the desktop's self-update fetches from (see apps/desktop/electron/main.ts
+# checkUpdates -> `git fetch origin <branch>`). Point it here and pushing to the
+# fork is all it takes for an installed app to see an update; point it back at
+# NousResearch and installs silently track upstream instead.
+#
+# Keep in step with $RepoSlug below, scripts/install.sh, and the raw URL in
+# apps/desktop/electron/bootstrap-runner.ts.
+$RepoSlug = "windro-xdd/hermes-agent"
+$RepoUrlSsh = "git@github.com:$RepoSlug.git"
+$RepoUrlHttps = "https://github.com/$RepoSlug.git"
 $PythonVersion = "3.11"
 # Minor versions the installer accepts when the requested $PythonVersion isn't
 # available, in preference order.  uv discovers both uv-managed and system
@@ -1663,13 +1675,13 @@ function Install-Repository {
                 # for.  GitHub supports archive URLs for commits, tags, and
                 # branches; we honour Commit > Tag > Branch.
                 if ($Commit) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/$Commit.zip"
+                    $zipUrl = "https://github.com/$RepoSlug/archive/$Commit.zip"
                     $zipLabel = $Commit
                 } elseif ($Tag) {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$Tag.zip"
+                    $zipUrl = "https://github.com/$RepoSlug/archive/refs/tags/$Tag.zip"
                     $zipLabel = $Tag
                 } else {
-                    $zipUrl = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/$Branch.zip"
+                    $zipUrl = "https://github.com/$RepoSlug/archive/refs/heads/$Branch.zip"
                     $zipLabel = $Branch
                 }
                 $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"

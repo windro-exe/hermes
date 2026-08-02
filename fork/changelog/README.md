@@ -136,3 +136,8 @@ Newest first. `Superseded by` means read the newer entry instead.
 | 2026-07-27 | Performance | [Gateway RPC latency: pool session.history, compact project-tree rows](entries/2026-07-27-03-gateway-rpc-latency.md) | current |
 | 2026-07-27 | Added | [This changelog folder](entries/2026-07-27-02-fork-changelog-folder.md) | current |
 | 2026-07-27 | Added | [Agent-facing fork rules](entries/2026-07-27-01-agent-fork-rules.md) | current |
+
+## Update popup test
+
+This line exists so the desktop update check sees a newer commit on
+origin/main than the installed build. Safe to delete.

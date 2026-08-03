@@ -461,9 +461,28 @@ function liveLaneForRepo(repoRoot: string, session: SessionInfo): null | Sidebar
       : { id: worktreeRoot, isMain: false, label: slug, path: worktreeRoot, sessions: [] }
   }
 
-  const branch = (session.git_branch || '').trim() || DEFAULT_BRANCH_LABEL
+  // The id is built from the RAW branch, the label from the fallback.
+  //
+  // These must not be conflated: the backend keys a branchless session's lane on
+  // the empty string (`_branch_lane_id` in tui_gateway/project_tree.py, whose
+  // docstring spells out "<repoRoot>::branch::<branch>` (or `::branch::`)"), so
+  // substituting DEFAULT_BRANCH_LABEL before building the id produced
+  // `…::branch::main` here against `…::branch::` there. The reconciler saw two
+  // different lanes and rendered ONE session twice — once under the backend's
+  // lane, labelled from the folder, and once under this synthesised "main".
+  //
+  // It only shows up outside a git repo, where git_branch is null and every
+  // session takes this path. `branchLaneId`'s own comment already required the
+  // ids to match; the display fallback had leaked into the identity.
+  const rawBranch = (session.git_branch || '').trim()
 
-  return { id: branchLaneId(repoRoot, branch), isMain: true, label: branch, path: repoRoot, sessions: [] }
+  return {
+    id: branchLaneId(repoRoot, rawBranch),
+    isMain: true,
+    label: rawBranch || DEFAULT_BRANCH_LABEL,
+    path: repoRoot,
+    sessions: []
+  }
 }
 
 const NO_REMOVED: ReadonlySet<string> = new Set()

@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-04 | Fixed | [One session rendered under two lanes (branch lane id)](entries/2026-08-04-01-branch-lane-id.md) | current |
 | 2026-08-03 | Added | [See which project rules the agent is actually running on](entries/2026-08-03-02-rules-inspector.md) | current |
 | 2026-08-03 | Fixed | [A toast pushed off screen never learned it was gone](entries/2026-08-03-01-notification-eviction.md) | current |
 | 2026-08-02 | Fixed | [`hermes update` no longer resets away unpushed commits](entries/2026-08-02-03-update-unpushed-guard.md) | current |

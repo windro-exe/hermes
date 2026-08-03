@@ -2073,9 +2073,28 @@ export interface Translations {
         empty: string
         loading: string
         percentFull: (percent: number) => string
+        /**
+         * Project-rules inspector strings. Optional so the fork can ship this
+         * without translating it into every locale; the component falls back to
+         * English. Make it required once the other locales carry it.
+         */
+        rules?: {
+          hide: string
+          ideaLoaded: string
+          none: string
+          show: string
+          staleBadge: string
+          staleHint: string
+          stateLive: string
+          stateOff: string
+          stateScoped: string
+        }
         title: string
         tokenSummary: (used: string, max: string) => string
       }
+      /** Shown on the context item before any usage is reported. Optional:
+       *  English fallback lives in the hook. */
+      contextUsageIdle?: string
       openContextUsage: string
       session: string
       runtimeSessionElapsed: string

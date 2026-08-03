@@ -86,6 +86,91 @@ def _strip_blocks(text: str, *blocks: str) -> str:
     return out.strip()
 
 
+def project_rules_detail(prompt_fingerprint: Optional[str]) -> Dict[str, Any]:
+    """What this project's rules currently are, and whether the prompt is stale.
+
+    The token count alone cannot answer the question people actually have when a
+    rule misbehaves — "did the agent get it?" — because four different things
+    look identical from outside: the rule is off, it is path-scoped (parsed but
+    not honoured yet), a different project folder was resolved, or the session's
+    prompt was built before the file was saved. The last one is the one that
+    actually bit windro.
+
+    Rules are returned as ONE flat list rather than grouped by file. A single
+    ``rules.md`` is the intended shape for a solo project: splitting only pays
+    for path-scoping (not implemented), group toggles, or team merge conflicts.
+
+    ``prompt_fingerprint`` is what the live session's cached prompt was built
+    from. When it differs from disk, the rules shown here are NOT what the agent
+    is currently running on — the next turn rebuilds and picks them up.
+    """
+    from agent.prompt_builder import (
+        _find_project_rules_dir,
+        _IDEA_MD_NAMES,
+        _parse_rule_frontmatter,
+        _rule_is_always_on,
+        _strip_yaml_frontmatter,
+        project_files_fingerprint,
+    )
+    from agent.runtime_cwd import resolve_context_cwd
+
+    cwd = resolve_context_cwd()
+    detail: Dict[str, Any] = {
+        "cwd": str(cwd) if cwd else None,
+        "dir": None,
+        "idea": False,
+        "rules": [],
+        "stale": False,
+    }
+
+    if cwd is None:
+        return detail
+
+    current = project_files_fingerprint(str(cwd))
+    detail["stale"] = bool(prompt_fingerprint is not None and current != prompt_fingerprint)
+
+    for name in _IDEA_MD_NAMES:
+        if (cwd / name).is_file():
+            detail["idea"] = True
+            break
+
+    rules_dir = _find_project_rules_dir(cwd)
+    if rules_dir is None:
+        return detail
+
+    detail["dir"] = str(rules_dir)
+
+    try:
+        files = sorted(
+            (p for p in rules_dir.iterdir() if p.is_file() and p.suffix.lower() == ".md"),
+            key=lambda p: p.name.lower(),
+        )
+    except Exception:
+        return detail
+
+    for path in files:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        frontmatter = _parse_rule_frontmatter(raw)
+        active = _rule_is_always_on(frontmatter)
+        # Distinguish "the author scoped this" from "someone switched it off",
+        # because the fixes are different: one is unimplemented, one is a toggle.
+        scoped = any(
+            str(key).lower() in {"paths", "globs", "applyto"} for key in frontmatter
+        )
+        state = "live" if active else ("scoped" if scoped else "off")
+
+        for line in _strip_yaml_frontmatter(raw).split("\n"):
+            text = line.strip().lstrip("-*").strip()
+            if text:
+                detail["rules"].append({"state": state, "text": text})
+
+    return detail
+
+
 def compute_session_context_breakdown(
     agent: Any,
     messages: Optional[List[dict]] = None,
@@ -94,7 +179,16 @@ def compute_session_context_breakdown(
     from agent.model_metadata import estimate_messages_tokens_rough
     from agent.system_prompt import build_system_prompt_parts
 
+    # Snapshot BEFORE build_system_prompt_parts: that call records a fresh
+    # project-files fingerprint, so measuring the prompt would otherwise consume
+    # the very "your rules changed" signal this breakdown exists to report — and
+    # worse, suppress the rebuild the next turn was going to do. Restored below.
+    prompt_files_fingerprint = getattr(agent, "_project_files_fingerprint", None)
+
     parts = build_system_prompt_parts(agent)
+
+    if prompt_files_fingerprint is not None:
+        agent._project_files_fingerprint = prompt_files_fingerprint
     stable = parts.get("stable", "") or ""
     context = parts.get("context", "") or ""
     volatile = parts.get("volatile", "") or ""
@@ -153,6 +247,7 @@ def compute_session_context_breakdown(
         "context_used": context_used,
         "estimated_total": estimated_total,
         "model": getattr(agent, "model", "") or "",
+        "rules_detail": project_rules_detail(prompt_files_fingerprint),
     }
 
 

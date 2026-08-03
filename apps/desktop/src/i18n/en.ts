@@ -2468,9 +2468,21 @@ export const en: Translations = {
         empty: 'No context data yet',
         loading: 'Loading breakdown…',
         percentFull: percent => `${percent}% Full`,
+        rules: {
+          hide: 'hide',
+          ideaLoaded: 'IDEA.md loaded',
+          none: 'No project rules in this folder',
+          show: 'show',
+          staleBadge: 'changed',
+          staleHint: 'Rules changed since this session started — your next message picks them up.',
+          stateLive: 'live',
+          stateOff: 'off',
+          stateScoped: 'path-scoped, not active yet'
+        },
         title: 'Context Usage',
         tokenSummary: (used, max) => `${used} / ${max} Tokens`
       },
+      contextUsageIdle: 'context',
       openContextUsage: 'Open context usage breakdown',
       session: 'Session',
       runtimeSessionElapsed: 'Runtime session elapsed',

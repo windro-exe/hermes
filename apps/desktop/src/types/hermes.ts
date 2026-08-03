@@ -629,6 +629,34 @@ export interface ContextUsageCategory {
   tokens: number
 }
 
+/** One project rule, and whether the agent is actually acting on it. */
+export interface ProjectRuleDetail {
+  /**
+   * `live` — in the prompt.
+   * `scoped` — path-scoped, which Hermes parses but does not honour yet.
+   * `off` — switched off (`mode: manual` frontmatter).
+   */
+  state: 'live' | 'off' | 'scoped'
+  text: string
+}
+
+export interface ProjectRulesDetail {
+  /** Project folder the loader resolved, or null when there is no configured cwd. */
+  cwd: null | string
+  /** The `.hermes/rules` directory in use, or null when the project has none. */
+  dir: null | string
+  /** Whether an IDEA.md was found next to it. */
+  idea: boolean
+  /** Every rule found, flattened across files — a solo project wants one list. */
+  rules: ProjectRuleDetail[]
+  /**
+   * True when the rules on disk differ from the ones this session's prompt was
+   * built from, i.e. what you see here is NOT what the agent is running on yet.
+   * The next message rebuilds and picks them up.
+   */
+  stale: boolean
+}
+
 export interface ContextBreakdown {
   categories: ContextUsageCategory[]
   context_max: number
@@ -636,6 +664,7 @@ export interface ContextBreakdown {
   context_used: number
   estimated_total: number
   model?: string
+  rules_detail?: ProjectRulesDetail
 }
 
 export interface AnalyticsDailyEntry {

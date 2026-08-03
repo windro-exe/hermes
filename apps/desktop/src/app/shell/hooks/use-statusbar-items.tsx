@@ -498,9 +498,14 @@ export function useStatusbarItems({
       },
       {
         detail: contextBar || undefined,
-        hidden: !contextUsage,
+        // Visible whenever a session is focused, not only once usage has been
+        // reported. The panel behind this is how you inspect what went into the
+        // prompt — including which project rules are live — so hiding it until
+        // after a turn meant you could not check before sending one. The panel
+        // fetches its own breakdown, so it has something to show immediately.
+        hidden: !activeSessionId,
         id: 'context-usage',
-        label: contextUsage,
+        label: contextUsage || copy.contextUsageIdle || 'context',
         menuAlign: 'end',
         menuClassName: 'w-auto border-(--ui-stroke-secondary) p-0',
         menuContent: (

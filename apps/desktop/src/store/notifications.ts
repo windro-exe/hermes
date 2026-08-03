@@ -55,6 +55,9 @@ export interface NotificationInput {
   placement?: NotificationPlacement
 }
 
+/** How many toasts stay on screen; older ones are evicted (see notify). */
+const MAX_VISIBLE_NOTIFICATIONS = 4
+
 let notificationCounter = 0
 const timers = new Map<string, number>()
 
@@ -164,7 +167,23 @@ export function notify(input: NotificationInput): string {
 
   window.clearTimeout(timers.get(id))
   timers.delete(id)
-  $notifications.set([notification, ...$notifications.get().filter(item => item.id !== id)].slice(0, 4))
+
+  // The list is capped, so a burst of toasts pushes the oldest ones out. They
+  // used to be dropped by `.slice()` alone, which meant their `onDismiss` never
+  // ran and their auto-dismiss timer was left behind to fire against an entry
+  // that no longer existed. Evict them explicitly instead, with a
+  // 'programmatic' reason — the user never saw them, so nothing should treat
+  // this as a decision (the update toast, for one, must stay announceable).
+  const next = [notification, ...$notifications.get().filter(item => item.id !== id)]
+  const evicted = next.slice(MAX_VISIBLE_NOTIFICATIONS)
+
+  $notifications.set(next.slice(0, MAX_VISIBLE_NOTIFICATIONS))
+
+  for (const item of evicted) {
+    window.clearTimeout(timers.get(item.id))
+    timers.delete(item.id)
+    item.onDismiss?.('programmatic')
+  }
 
   const duration = input.durationMs ?? defaultDuration(kind)
 

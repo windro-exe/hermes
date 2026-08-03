@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-03 | Fixed | [A toast pushed off screen never learned it was gone](entries/2026-08-03-01-notification-eviction.md) | current |
 | 2026-08-02 | Fixed | [`hermes update` no longer resets away unpushed commits](entries/2026-08-02-03-update-unpushed-guard.md) | current |
 | 2026-08-02 | Fixed | [Update toast fired, then a routine action silently dismissed it](entries/2026-08-02-02-update-toast-dismissal-reason.md) | current |
 | 2026-08-02 | Fixed | [Update toast fired and was silently dismissed](entries/2026-08-02-01-update-toast-invisible.md) | superseded by 02 |

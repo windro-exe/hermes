@@ -23,7 +23,8 @@ function source(relative: string): string {
 beforeEach(() => {
   $github.set({ connected: false, login: null })
   $githubRepos.set(null)
-  // @ts-expect-error - deliberately clearing the injected bridge between tests
+  // Cast rather than @ts-expect-error: the property is optional, so deleting it
+  // is legal and the directive was unused.
   delete (window as unknown as { hermesDesktop?: unknown }).hermesDesktop
 })
 

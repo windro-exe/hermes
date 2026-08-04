@@ -202,9 +202,28 @@ describe('renderRpcResult', () => {
 
   describe('session.usage', () => {
     it('formats calls / input / output / total with thousands separators', () => {
+      // Grouping comes from the RUNNER's locale, because the code calls
+      // `toLocaleString()` with no locale argument — deliberately, so the number a
+      // user sees matches their own conventions. Under en-IN, 1234567 groups as
+      // lakhs (12,34,567), so a hardcoded US expectation fails permanently on
+      // those machines and drowns out real failures.
+      //
+      // Asserting the assembled shape against the same formatter keeps the real
+      // subject of the test — the layout, separators and ordering — while staying
+      // locale-agnostic.
+      const group = (value: number) => value.toLocaleString()
+
       expect(renderRpcResult({ calls: 12, input: 1_234_567, output: 89_012, total: 1_323_579 }, 'usage')).toBe(
-        'Usage: 12 calls · 1,234,567 in / 89,012 out · 1,323,579 total'
+        `Usage: ${group(12)} calls · ${group(1_234_567)} in / ${group(89_012)} out · ${group(1_323_579)} total`
       )
+    })
+
+    it('actually groups large numbers rather than printing them bare', () => {
+      // Guards the weaker assertion above: building the expectation from the same
+      // function would still pass if grouping vanished entirely.
+      const rendered = renderRpcResult({ calls: 1, input: 1_234_567, output: 1, total: 1_234_568 }, 'usage')
+
+      expect(rendered).not.toContain('1234567')
     })
 
     it('appends credits_lines when present', () => {

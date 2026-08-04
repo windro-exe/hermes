@@ -161,6 +161,28 @@ declare global {
       ) => Promise<{ path: string }>
       // Move a file/folder to the OS trash (recoverable).
       trashPath?: (path: string) => Promise<boolean>
+      /**
+       * GitHub account + repository operations for the project flow.
+       *
+       * The token stays in the main process: `status` reports whether one is
+       * stored and who it belongs to, never the value.
+       */
+      github?: {
+        clone: (options: { cloneUrl: string; targetDir: string }) => Promise<{ ok: boolean; path: string }>
+        connect: (token: string) => Promise<{ login: string; name: null | string }>
+        connectRemote: (options: {
+          cloneUrl: string
+          repoDir: string
+        }) => Promise<{ ok: boolean; pushError: null | string; pushed: boolean }>
+        createRepo: (options: {
+          description?: string
+          name: string
+          private?: boolean
+        }) => Promise<HermesGitHubRepo>
+        disconnect: () => Promise<{ connected: boolean }>
+        listRepos: () => Promise<HermesGitHubRepo[]>
+        status: () => Promise<{ connected: boolean; error?: string; login: null | string; name?: null | string }>
+      }
       // Git-driven worktree management for the "Start work" flow.
       git?: {
         /**
@@ -169,6 +191,8 @@ declare global {
          * from, so worktrees and branch lanes work immediately.
          */
         init: (dirPath: string) => Promise<{ ok: boolean; path: string }>
+        /** Configured remote names, empty when the repo has none. */
+        remoteList: (repoPath: string) => Promise<string[]>
         worktreeList: (repoPath: string) => Promise<HermesGitWorktree[]>
         worktreeAdd: (
           repoPath: string,
@@ -778,6 +802,16 @@ export interface HermesPreviewWatch {
 
 // A real git worktree as reported by `git worktree list` (source of truth for
 // the "Start work" flow), as opposed to the session-cwd-derived grouping above.
+/** A GitHub repository, as the project flow needs it. */
+export interface HermesGitHubRepo {
+  cloneUrl: string
+  defaultBranch: string
+  fullName: string
+  name: string
+  private: boolean
+  pushedAt: null | string
+}
+
 export interface HermesGitWorktree {
   path: string
   branch: null | string

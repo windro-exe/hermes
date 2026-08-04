@@ -151,6 +151,22 @@ async function defaultBranch(gitBin, cwd) {
 // with a root commit on the user's behalf so worktrees "just work". No-op for a
 // repo that already has commits; never touches the user's files (the seed commit
 // is `--allow-empty`), and never inits a dir that already lives inside a repo.
+// Configured remote names for a repo. Empty array when the repo has none, or when
+// the path is not a repo at all — callers use this to decide whether to OFFER
+// something, so a failure should read as "nothing to offer", not throw.
+async function listRemotes(dir, gitBin) {
+  try {
+    const out = await runGit(gitBin, ['remote'], dir)
+
+    return out
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 async function ensureGitRepo(gitBin, dir) {
   let needsRoot = false
 
@@ -424,6 +440,7 @@ export {
   ensureGitRepo,
   listBaseBranches,
   listBranches,
+  listRemotes,
   listWorktrees,
   parseWorktrees,
   removeWorktree,

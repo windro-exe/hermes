@@ -104,9 +104,17 @@ import {
 } from './git-review-ops'
 import { gitRootForIpc } from './git-root'
 import {
+  cloneRepo as githubCloneRepo,
+  connectRemote as githubConnectRemote,
+  createRepo as githubCreateRepo,
+  identify as githubIdentify,
+  listRepos as githubListRepos
+} from './github-ops'
+import {
   addWorktree,
   ensureGitRepo,
   listBaseBranches,
+  listRemotes,
   listBranches,
   listWorktrees,
   removeWorktree,
@@ -10682,6 +10690,152 @@ ipcMain.handle('hermes:fs:trash', async (_event, targetPath) => {
   await shell.trashItem(target)
 
   return true
+})
+
+// ---------------------------------------------------------------------------
+// GitHub account connection (project create/clone flow)
+//
+// One token, stored the same way the native OAuth tokens are: encrypted through
+// `encryptDesktopSecret` (Electron safeStorage → OS keychain) in a 0600 file under
+// userData. It is decrypted only here in the main process and never handed to the
+// renderer — the renderer asks "am I connected and as whom", not "what is the
+// token". That keeps the credential out of devtools, out of any renderer crash
+// dump, and out of the React tree.
+// ---------------------------------------------------------------------------
+
+function _githubTokenPath() {
+  return path.join(app.getPath('userData'), 'github-token.json')
+}
+
+function _readGithubToken(): null | string {
+  try {
+    const raw = JSON.parse(fs.readFileSync(_githubTokenPath(), 'utf8'))
+
+    return decryptDesktopSecret(raw?.token) || null
+  } catch {
+    return null
+  }
+}
+
+function _writeGithubToken(token: null | string) {
+  const target = _githubTokenPath()
+
+  if (!token) {
+    try {
+      fs.rmSync(target, { force: true })
+    } catch {
+      // Already gone.
+    }
+
+    return
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, JSON.stringify({ token: encryptDesktopSecret(token) }), { mode: 0o600 })
+}
+
+// Connect: validate the token BEFORE storing it, so a typo cannot leave the app
+// believing it is connected.
+ipcMain.handle('hermes:github:connect', async (_event, token) => {
+  const raw = String(token || '').trim()
+
+  if (!raw) {
+    throw new Error('Paste a GitHub token to connect.')
+  }
+
+  const identity = await githubIdentify(raw)
+  _writeGithubToken(raw)
+
+  return identity
+})
+
+ipcMain.handle('hermes:github:status', async () => {
+  const token = _readGithubToken()
+
+  if (!token) {
+    return { connected: false, login: null }
+  }
+
+  try {
+    const identity = await githubIdentify(token)
+
+    return { connected: true, login: identity.login, name: identity.name }
+  } catch (error) {
+    // A stored-but-rejected token (expired, revoked) reports as disconnected with
+    // the reason, rather than silently looking fine until the first repo call.
+    return { connected: false, error: (error as Error).message, login: null }
+  }
+})
+
+ipcMain.handle('hermes:github:disconnect', async () => {
+  _writeGithubToken(null)
+
+  return { connected: false }
+})
+
+function _requireGithubToken(): string {
+  const token = _readGithubToken()
+
+  if (!token) {
+    throw new Error('No GitHub account connected.')
+  }
+
+  return token
+}
+
+ipcMain.handle('hermes:github:listRepos', async () => githubListRepos(_requireGithubToken()))
+
+ipcMain.handle('hermes:github:createRepo', async (_event, options) =>
+  githubCreateRepo(_requireGithubToken(), {
+    description: options?.description,
+    name: String(options?.name || '').trim(),
+    private: options?.private !== false
+  })
+)
+
+ipcMain.handle('hermes:github:clone', async (_event, options) => {
+  const cloneUrl = String(options?.cloneUrl || '').trim()
+  const targetDir = String(options?.targetDir || '').trim()
+
+  if (!cloneUrl || !targetDir) {
+    throw new Error('Cloning needs a repository and a destination folder.')
+  }
+
+  return githubCloneRepo(resolveGitBinary(), {
+    cloneUrl,
+    // Public repos clone without a token; a private one needs it. Passing it
+    // unconditionally when present avoids a "works for public, fails for private"
+    // split that is confusing to diagnose.
+    targetDir,
+    token: _readGithubToken() ?? undefined
+  })
+})
+
+ipcMain.handle('hermes:github:connectRemote', async (_event, options) => {
+  const cloneUrl = String(options?.cloneUrl || '').trim()
+  const repoDir = String(options?.repoDir || '').trim()
+
+  if (!cloneUrl || !repoDir) {
+    throw new Error('Connecting a remote needs a repository URL and a folder.')
+  }
+
+  return githubConnectRemote(resolveGitBinary(), {
+    cloneUrl,
+    repoDir,
+    token: _readGithubToken() ?? undefined
+  })
+})
+
+// Remote names configured in a repo. Used to decide whether to offer connecting
+// one, so the offer never appears for a repo that already has an origin.
+ipcMain.handle('hermes:git:remoteList', async (_event, repoPath) => {
+  const dir = String(repoPath || '').trim()
+
+  if (!dir) {
+    return []
+  }
+
+  return listRemotes(dir, resolveGitBinary())
 })
 
 // Make a folder a git repo, or leave an existing one alone.

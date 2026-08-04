@@ -9,6 +9,7 @@ import { desktopGit } from '@/lib/desktop-git'
 import { isMissingRpcMethod } from '@/lib/gateway-rpc'
 import { persistentAtom } from '@/lib/persisted'
 import { $gateway, activeGateway, ensureActiveGatewayOpen } from '@/store/gateway'
+import { githubAvailable, refreshGitHubStatus } from '@/store/github'
 import { setSidebarAgentsGrouped } from '@/store/layout'
 import { notify } from '@/store/notifications'
 import { $activeGatewayProfile, requestFreshSession } from '@/store/profile'
@@ -644,6 +645,70 @@ async function initProjectGitRepo(folder: null | string | undefined): Promise<vo
   }
 }
 
+/**
+ * Offer to connect a GitHub remote, for a project whose repo has none.
+ *
+ * A toast rather than a step in the dialog, because it is optional and the project
+ * is already usable without it. Blocking creation on a remote decision would make
+ * "just give me a folder to work in" slower for the common case.
+ *
+ * Stays silent unless it can actually help: it needs the GitHub bridge, a repo
+ * with no `origin` already, and — deliberately — a connected account. Offering
+ * "connect a remote" to someone with no GitHub account connected would open a
+ * token prompt they did not ask for.
+ *
+ * `durationMs: 0` keeps it until dismissed. Skipping the update-toast lesson here
+ * would be a mistake: `clearNotifications()` fires on prompt submit and session
+ * switch, so anything that self-dismisses on a timer would vanish before it was
+ * read.
+ */
+async function offerRemoteForProject(folder: null | string | undefined): Promise<void> {
+  const dir = (folder || '').trim().replace(/[/\\]+$/, '')
+
+  if (!dir || !githubAvailable()) {
+    return
+  }
+
+  try {
+    const status = await refreshGitHubStatus()
+
+    if (!status.connected) {
+      return
+    }
+
+    const remotes = await window.hermesDesktop?.git?.remoteList?.(dir)
+
+    if (remotes && remotes.length > 0) {
+      // Already wired to something — nothing to offer.
+      return
+    }
+
+    notify({
+      action: {
+        label: 'Connect',
+        onClick: () => {
+          $projectRemotePrompt.set({ folder: dir })
+        }
+      },
+      durationMs: 0,
+      icon: 'github',
+      id: `project-remote-${dir}`,
+      kind: 'info',
+      message: `Push it to a GitHub repository so it is backed up and shareable.`,
+      title: 'This project has no remote'
+    })
+  } catch {
+    // An optional convenience; a probe failure must stay invisible.
+  }
+}
+
+/**
+ * Set when the user accepts the "connect a remote" toast, so the sidebar can open
+ * the repo picker for that folder. An atom rather than a direct call because the
+ * toast fires from a store and the picker is a component.
+ */
+export const $projectRemotePrompt = atom<null | { folder: string }>(null)
+
 async function writeProjectIdea(folder: null | string | undefined, idea: string): Promise<void> {
   const dir = (folder || '').trim()
   const body = idea.trim()
@@ -757,7 +822,7 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectI
     // ahead of IDEA.md deliberately: if the folder is fresh, the seed commit
     // lands first and IDEA.md shows up as a normal untracked change rather than
     // being swept into the initial commit.
-    void initProjectGitRepo(projectFolder)
+    void initProjectGitRepo(projectFolder).then(() => offerRemoteForProject(projectFolder))
 
     if (input.idea) {
       void writeProjectIdea(projectFolder, input.idea)

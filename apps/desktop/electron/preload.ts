@@ -151,8 +151,21 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   writeTextFile: (filePath, content, options) =>
     ipcRenderer.invoke('hermes:fs:writeText', filePath, content, options),
   trashPath: targetPath => ipcRenderer.invoke('hermes:fs:trash', targetPath),
+  // GitHub account + repository operations for the project flow. The token itself
+  // never crosses this boundary — `status` answers "connected, and as whom".
+  github: {
+    clone: options => ipcRenderer.invoke('hermes:github:clone', options),
+    connect: token => ipcRenderer.invoke('hermes:github:connect', token),
+    connectRemote: options => ipcRenderer.invoke('hermes:github:connectRemote', options),
+    createRepo: options => ipcRenderer.invoke('hermes:github:createRepo', options),
+    disconnect: () => ipcRenderer.invoke('hermes:github:disconnect'),
+    listRepos: () => ipcRenderer.invoke('hermes:github:listRepos'),
+    status: () => ipcRenderer.invoke('hermes:github:status')
+  },
+
   git: {
     init: dirPath => ipcRenderer.invoke('hermes:git:init', dirPath),
+    remoteList: repoPath => ipcRenderer.invoke('hermes:git:remoteList', repoPath),
     worktreeList: repoPath => ipcRenderer.invoke('hermes:git:worktreeList', repoPath),
     worktreeAdd: (repoPath, options) => ipcRenderer.invoke('hermes:git:worktreeAdd', repoPath, options),
     worktreeRemove: (repoPath, worktreePath, options) =>

@@ -15,9 +15,11 @@ import { GenerateButton } from '@/components/ui/generate-button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Tip } from '@/components/ui/tooltip'
+import type { HermesGitHubRepo } from '@/global'
 import { useI18n } from '@/i18n'
 import { type ProjectIdeaTemplate, randomIdeaTemplates } from '@/lib/project-idea-templates'
 import { cn } from '@/lib/utils'
+import { cloneGitHubRepo, githubAvailable } from '@/store/github'
 import { notifyError } from '@/store/notifications'
 import {
   $projectDialog,
@@ -28,6 +30,8 @@ import {
   pickProjectFolder,
   renameProject
 } from '@/store/projects'
+
+import { GitHubRepoPicker } from './projects/github-repo-picker'
 
 // Single dialog mounted once in the sidebar; it renders create / rename /
 // add-folder flows driven by the $projectDialog atom. Folders are chosen via
@@ -45,6 +49,8 @@ export function ProjectDialog() {
   const [templates, setTemplates] = useState<ProjectIdeaTemplate[]>([])
   const [generatingIdea, setGeneratingIdea] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showGitHub, setShowGitHub] = useState(false)
+  const [cloning, setCloning] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -84,6 +90,44 @@ export function ProjectDialog() {
       notifyError(err, p.createFailed)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  /**
+   * Clone a picked GitHub repo and add the checkout as a project folder.
+   *
+   * The user chooses a PARENT directory and the repo lands in a subfolder named
+   * after it, which is what `git clone` does in a terminal and avoids cloning into
+   * a directory that already holds unrelated files.
+   *
+   * Also fills the project name when it is still empty: having just picked a
+   * repository, being asked to name the project again is busywork.
+   */
+  const cloneAndAdd = async (repo: HermesGitHubRepo) => {
+    setCloning(true)
+
+    try {
+      const parent = await pickProjectFolder()
+
+      if (!parent) {
+        return
+      }
+
+      const separator = parent.includes('\\') ? '\\' : '/'
+      const target = `${parent.replace(/[/\\]+$/, '')}${separator}${repo.name}`
+      const cloned = await cloneGitHubRepo(repo.cloneUrl, target)
+
+      if (!cloned) {
+        return
+      }
+
+      setFolders(prev => (prev.includes(cloned) ? prev : [...prev, cloned]))
+      setName(prev => prev.trim() || repo.name)
+      setShowGitHub(false)
+    } catch (err) {
+      notifyError(err, p.createFailed)
+    } finally {
+      setCloning(false)
     }
   }
 
@@ -216,17 +260,44 @@ export function ProjectDialog() {
                 ))}
               </ul>
             )}
-            <Button
-              className="self-start"
-              disabled={submitting}
-              onClick={() => void pickFolder()}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              <Codicon name="add" size="0.75rem" />
-              {p.addFolder}
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                disabled={submitting}
+                onClick={() => void pickFolder()}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Codicon name="add" size="0.75rem" />
+                {p.addFolder}
+              </Button>
+              {/* Only offered when the GitHub bridge exists — absent in
+                  remote-gateway mode, where cloning onto this machine is not
+                  what the user would get. */}
+              {githubAvailable() && !showGitHub && (
+                <Button
+                  disabled={submitting || cloning}
+                  onClick={() => setShowGitHub(true)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="github" size="0.75rem" />
+                  From GitHub
+                </Button>
+              )}
+              {cloning && (
+                <span className="text-[0.6875rem] text-(--ui-text-tertiary)">Cloning…</span>
+              )}
+            </div>
+            {showGitHub && (
+              <GitHubRepoPicker
+                defaultRepoName={name}
+                disabled={submitting || cloning}
+                onCancel={() => setShowGitHub(false)}
+                onPick={repo => void cloneAndAdd(repo)}
+              />
+            )}
           </div>
         )}
 

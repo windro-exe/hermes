@@ -128,6 +128,7 @@ import {
   StartWorkButton,
   useRepoWorktreeMap
 } from './projects'
+import { ProjectRemoteDialog } from './projects/project-remote-dialog'
 import { ProjectRulesDialog } from './projects/project-rules-dialog'
 import { SidebarBlankState, SidebarPinnedEmptyState, SidebarSessionSkeletons } from './section-states'
 import { SidebarSessionsSection, VIRTUALIZE_THRESHOLD } from './sessions-section'
@@ -1484,6 +1485,7 @@ export function ChatSidebar({
         </div>
       </SidebarContent>
       <ProjectDialog />
+      <ProjectRemoteDialog />
       <ProjectRulesDialog />
     </Sidebar>
   )

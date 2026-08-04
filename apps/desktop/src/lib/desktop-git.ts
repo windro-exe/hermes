@@ -51,6 +51,10 @@ const remoteGit: GitBridge = {
   // projects and every branch-shaped feature downstream would look broken there.
   init: (dirPath: string) => gitPost('init', { path: dirPath }),
 
+  // No REST equivalent: nothing offers to connect a remote in remote-gateway
+  // mode, so reporting "no remotes" keeps that path quiet rather than wrong.
+  remoteList: async () => [],
+
   worktreeList: async repoPath =>
     (await gitGet<{ worktrees: HermesGitWorktree[] }>('worktrees', { path: repoPath })).worktrees,
 

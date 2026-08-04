@@ -134,6 +134,73 @@ def _resolve_to_parent(db, session_id: str) -> tuple[str, bool]:
     return cur, has_compression
 
 
+def _project_root_for_session(db, session_id: str) -> Optional[str]:
+    """The project a session belongs to — its git repo root, else its cwd.
+
+    Returns ``None`` when the session has neither, which means there is nothing to
+    scope by and search stays global.
+    """
+    if not session_id:
+        return None
+
+    try:
+        row = db.get_session(session_id) or {}
+    except Exception:
+        logging.debug("could not read session %s for project scope", session_id, exc_info=True)
+        return None
+
+    root = (row.get("git_repo_root") or row.get("cwd") or "").strip()
+
+    return root.rstrip("\\/") or None
+
+
+def _under_project(candidate: Optional[str], root: str) -> bool:
+    """Whether ``candidate`` sits inside ``root``.
+
+    Compared case-insensitively with separators normalised, because Windows paths
+    reach the database in whatever case and slash style the caller used.
+    """
+    if not candidate:
+        return False
+
+    def norm(value: str) -> str:
+        return value.strip().rstrip("\\/").replace("\\", "/").lower()
+
+    left = norm(candidate)
+    right = norm(root)
+
+    return left == right or left.startswith(right + "/")
+
+
+def _sessions_in_project(db, root: str) -> Optional[set]:
+    """Ids of sessions whose cwd (or repo root) sits inside ``root``.
+
+    ``None`` means "could not determine", which callers treat as no scoping rather
+    than as an empty set — failing closed here would silently make search useless.
+    """
+    try:
+        rows = db.list_sessions_rich(limit=2000)
+    except Exception:
+        logging.debug("could not list sessions for project scope", exc_info=True)
+        return None
+
+    if not rows:
+        return None
+
+    keep = set()
+
+    for row in rows:
+        sid = row.get("id") or row.get("session_id")
+
+        if not sid:
+            continue
+
+        if _under_project(row.get("git_repo_root"), root) or _under_project(row.get("cwd"), root):
+            keep.add(str(sid))
+
+    return keep
+
+
 def _resolve_lineage(db, session_id: str) -> str:
     """Convenience: return only the lineage root (ignores compression hop)."""
     return _resolve_to_parent(db, session_id)[0]

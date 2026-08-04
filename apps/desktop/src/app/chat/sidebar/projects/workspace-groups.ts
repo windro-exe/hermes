@@ -461,25 +461,21 @@ function liveLaneForRepo(repoRoot: string, session: SessionInfo): null | Sidebar
       : { id: worktreeRoot, isMain: false, label: slug, path: worktreeRoot, sessions: [] }
   }
 
-  // The id is built from the RAW branch, the label from the fallback.
+  // Branch is normalised to DEFAULT_BRANCH_LABEL before the id is built, matching
+  // every backend placement path — tui_gateway/project_tree.py:229/245/253 all do
+  // `b = (branch or "").strip() or DEFAULT_BRANCH_LABEL` first, with the comment
+  // "Unrecorded branch folds into the one trunk lane, so a repo never shows two
+  // 'main' lanes". _branch_lane_id itself does NOT normalise, so reading its body
+  // alone suggests the raw value is wanted; the callers are what matter.
   //
-  // These must not be conflated: the backend keys a branchless session's lane on
-  // the empty string (`_branch_lane_id` in tui_gateway/project_tree.py, whose
-  // docstring spells out "<repoRoot>::branch::<branch>` (or `::branch::`)"), so
-  // substituting DEFAULT_BRANCH_LABEL before building the id produced
-  // `…::branch::main` here against `…::branch::` there. The reconciler saw two
-  // different lanes and rendered ONE session twice — once under the backend's
-  // lane, labelled from the folder, and once under this synthesised "main".
-  //
-  // It only shows up outside a git repo, where git_branch is null and every
-  // session takes this path. `branchLaneId`'s own comment already required the
-  // ids to match; the display fallback had leaked into the identity.
-  const rawBranch = (session.git_branch || '').trim()
+  // A previous fork commit changed this to pass the raw branch, on exactly that
+  // misreading, and thereby introduced the id mismatch it claimed to fix.
+  const branch = (session.git_branch || '').trim() || DEFAULT_BRANCH_LABEL
 
   return {
-    id: branchLaneId(repoRoot, rawBranch),
+    id: branchLaneId(repoRoot, branch),
     isMain: true,
-    label: rawBranch || DEFAULT_BRANCH_LABEL,
+    label: branch,
     path: repoRoot,
     sessions: []
   }
@@ -564,7 +560,23 @@ export function overlayRepoLanes(
         (placed.isMain
           ? lanes.find(g => g.isMain && g.label.toLowerCase() === placed.label.toLowerCase())
           : undefined) ??
-        (!placed.isMain && placedKey ? lanes.find(g => pathKey(g.path) === placedKey) : undefined)
+        // For a session with NO recorded branch, also match the repo's lane by path.
+        //
+        // That is the one case where the backend may key the lane differently from
+        // this function: with no git repo and no persisted root it falls to the
+        // path-only heuristic (tui_gateway/project_tree.py:215) and emits
+        // `lane_key = <path>` labelled with the FOLDER NAME, while this computes
+        // `<path>::branch::main` labelled "main". Neither the id nor the label rung
+        // matched, so a second lane appeared and ONE session rendered twice.
+        //
+        // Deliberately gated on the branch being absent. Every lane this function
+        // builds carries `isMain: true`, so matching on path alone would collapse
+        // `feature/x` into `main` — a worse bug, and one a guard here now covers.
+        // When a branch IS recorded, both sides key it `<root>::branch::<branch>`
+        // and the id rung already matches.
+        (placedKey && !(session.git_branch || '').trim()
+          ? lanes.find(g => g.isMain && pathKey(g.path) === placedKey)
+          : undefined)
 
       if (!lane) {
         lane = { ...placed, sessions: [] }

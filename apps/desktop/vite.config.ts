@@ -78,7 +78,25 @@ export default defineConfig(({ command }) => ({
       'react/jsx-dev-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-dev-runtime.js'),
       'react/jsx-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-runtime.js')
     },
-    dedupe: ['react', 'react-dom']
+    // Shiki ships TWICE: the app is on v4 while @streamdown/code pins ^3.19.0, so
+    // npm nests a second copy. Measured cost — @shikijs/langs alone is 15.19 MB of the
+    // 27.23 MB bundle (36.9%), and 347 language grammars are bundled twice.
+    //
+    // npm overrides do not apply in this workspace (tried both the flat and the
+    // `@streamdown/code` nested form; npm rewrote neither the lockfile nor the tree),
+    // and the duplication only costs us in the BUNDLE, not on disk — so dedupe it here
+    // where it actually matters. Same treatment react/react-dom already get above.
+    dedupe: [
+      '@shikijs/core',
+      '@shikijs/engine-javascript',
+      '@shikijs/engine-oniguruma',
+      '@shikijs/langs',
+      '@shikijs/themes',
+      '@shikijs/types',
+      'react',
+      'react-dom',
+      'shiki'
+    ]
   },
   server: {
     host: '127.0.0.1',

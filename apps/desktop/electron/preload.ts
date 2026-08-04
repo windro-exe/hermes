@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     ipcRenderer.invoke('hermes:fs:writeText', filePath, content, options),
   trashPath: targetPath => ipcRenderer.invoke('hermes:fs:trash', targetPath),
   git: {
+    init: dirPath => ipcRenderer.invoke('hermes:git:init', dirPath),
     worktreeList: repoPath => ipcRenderer.invoke('hermes:git:worktreeList', repoPath),
     worktreeAdd: (repoPath, options) => ipcRenderer.invoke('hermes:git:worktreeAdd', repoPath, options),
     worktreeRemove: (repoPath, worktreePath, options) =>

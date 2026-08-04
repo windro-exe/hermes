@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-04 | Added | [Creating a project now makes its folder a git repo](entries/2026-08-04-03-project-git-init.md) | current |
 | 2026-08-04 | Fixed | [A restructured transcript could kill the thread render permanently](entries/2026-08-04-02-thread-sync-hardening.md) | current |
 | 2026-08-04 | Fixed | [One session rendered under two lanes (branch lane id)](entries/2026-08-04-01-branch-lane-id.md) | current |
 | 2026-08-03 | Added | [See which project rules the agent is actually running on](entries/2026-08-03-02-rules-inspector.md) | current |

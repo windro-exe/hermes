@@ -105,6 +105,7 @@ import {
 import { gitRootForIpc } from './git-root'
 import {
   addWorktree,
+  ensureGitRepo,
   listBaseBranches,
   listBranches,
   listWorktrees,
@@ -10681,6 +10682,27 @@ ipcMain.handle('hermes:fs:trash', async (_event, targetPath) => {
   await shell.trashItem(target)
 
   return true
+})
+
+// Make a folder a git repo, or leave an existing one alone.
+//
+// ensureGitRepo already had the exact semantics a new project wants and was only
+// reachable from the worktree flow: init when the directory is not a work tree,
+// seed an empty root commit (with inline identity, so it works on a machine with
+// no global git config) when there is no HEAD to branch from, and do nothing at
+// all when the repo is already set up. Exposed here so creating a project can
+// call it — branch lanes, worktrees and "start work" all need a repo with a HEAD
+// before any of them mean anything.
+ipcMain.handle('hermes:git:init', async (_event, dirPath) => {
+  const dir = String(dirPath || '').trim()
+
+  if (!dir) {
+    throw new Error('git init requires a directory')
+  }
+
+  await ensureGitRepo(resolveGitBinary(), dir)
+
+  return { ok: true, path: dir }
 })
 
 // Git-driven worktree management ("Start work" flow). Errors surface to the

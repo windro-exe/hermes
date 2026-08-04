@@ -2835,6 +2835,10 @@ class GitBranchSwitchBody(BaseModel):
     branch: str
 
 
+class GitInitBody(BaseModel):
+    path: str
+
+
 @app.get("/api/git/status")
 async def git_status_route(path: str):
     return await _git_op(_web_git.repo_status, _git_path(path))
@@ -2942,6 +2946,17 @@ async def git_worktree_remove_route(body: GitWorktreeRemoveBody):
 @app.post("/api/git/branch/switch")
 async def git_branch_switch_route(body: GitBranchSwitchBody):
     return await _git_op(_web_git.branch_switch, _git_path(body.path), body.branch)
+
+
+@app.post("/api/git/init")
+async def git_init_route(body: GitInitBody):
+    """Make a project folder a git repo, or leave an existing one alone.
+
+    The remote-gateway counterpart of the desktop's ``hermes:git:init`` IPC, so a
+    project created against a remote backend gets the same treatment as a local
+    one. Idempotent — see :func:`hermes_cli.web_git.repo_init`.
+    """
+    return await _git_op(_web_git.repo_init, _git_path(body.path))
 
 
 # Host TCP ports each port-binding gateway platform listens on, as

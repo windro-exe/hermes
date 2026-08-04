@@ -611,6 +611,39 @@ export async function generateProjectIdea(name: string, draft = ''): Promise<str
 // Write IDEA.md to a project's primary folder (best-effort). Routes through the
 // remote-aware fs write, so it lands on the backend for a remote gateway and on
 // disk locally — the project is created regardless of whether the file lands.
+/**
+ * Make a new project's folder a git repo.
+ *
+ * Everything branch-shaped in the sidebar keys off git: lanes group sessions by
+ * the branch recorded in their cwd, and worktrees are how a branch gets its own
+ * directory. A project folder that is not a repo records no branch at all, which
+ * is both why lanes were meaningless there and why one session could render
+ * twice (see fork/changelog/entries/2026-08-04-01-branch-lane-id.md).
+ *
+ * Delegates to the main process's `ensureGitRepo`, which is idempotent: it inits
+ * only when the folder is not already a work tree, seeds an empty root commit
+ * when there is no HEAD to branch from, and does nothing to a repo that is
+ * already set up — so pointing a project at an existing checkout never touches
+ * its history.
+ *
+ * Best-effort, exactly like {@link writeProjectIdea}: the project is created
+ * whether or not git cooperates. A missing git binary or a read-only folder must
+ * not fail project creation.
+ */
+async function initProjectGitRepo(folder: null | string | undefined): Promise<void> {
+  const dir = (folder || '').trim()
+
+  if (!dir) {
+    return
+  }
+
+  try {
+    await window.hermesDesktop?.git?.init?.(dir.replace(/[/\\]+$/, ''))
+  } catch {
+    // Swallowed on purpose — see the note above.
+  }
+}
+
 async function writeProjectIdea(folder: null | string | undefined, idea: string): Promise<void> {
   const dir = (folder || '').trim()
   const body = idea.trim()
@@ -718,8 +751,16 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectI
   const created = res.project
 
   if (created) {
+    const projectFolder = created.primary_path ?? created.folders?.[0]?.path ?? input.primaryPath
+
+    // Give the project a git repo before anything else touches it. Sequenced
+    // ahead of IDEA.md deliberately: if the folder is fresh, the seed commit
+    // lands first and IDEA.md shows up as a normal untracked change rather than
+    // being swept into the initial commit.
+    void initProjectGitRepo(projectFolder)
+
     if (input.idea) {
-      void writeProjectIdea(created.primary_path ?? created.folders?.[0]?.path ?? input.primaryPath, input.idea)
+      void writeProjectIdea(projectFolder, input.idea)
     }
 
     if (!$projects.get().some(proj => proj.id === created.id)) {

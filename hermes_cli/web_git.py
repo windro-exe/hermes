@@ -567,6 +567,27 @@ def _ensure_repo(cwd: str) -> None:
         )
 
 
+def repo_init(cwd: str) -> dict:
+    """Public wrapper over :func:`_ensure_repo` for the project-create flow.
+
+    Creating a project makes its folder a repo, because everything branch-shaped
+    downstream needs one: sidebar lanes group sessions by the branch recorded in
+    their cwd, and worktrees are how a branch gets its own directory. A folder
+    that is not a repo records no branch at all.
+
+    Idempotent, and deliberately so — pointing a project at an existing checkout
+    must never touch its history. ``_ensure_repo`` only inits when the folder is
+    not a work tree and only commits when there is no HEAD to branch from.
+
+    This exists so the desktop has the same behaviour in remote-gateway mode as
+    it does locally (where it calls ``ensureGitRepo`` over IPC). Without it, git
+    init would silently do nothing for a remote project.
+    """
+    _ensure_repo(cwd)
+
+    return {"ok": True, "path": cwd}
+
+
 def _unique_dir(base: str) -> str:
     candidate = base
     n = 1

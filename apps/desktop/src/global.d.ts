@@ -163,6 +163,12 @@ declare global {
       trashPath?: (path: string) => Promise<boolean>
       // Git-driven worktree management for the "Start work" flow.
       git?: {
+        /**
+         * Make `dirPath` a git repo with a HEAD, or leave an existing repo alone.
+         * Idempotent. Seeds an empty root commit when there is nothing to branch
+         * from, so worktrees and branch lanes work immediately.
+         */
+        init: (dirPath: string) => Promise<{ ok: boolean; path: string }>
         worktreeList: (repoPath: string) => Promise<HermesGitWorktree[]>
         worktreeAdd: (
           repoPath: string,

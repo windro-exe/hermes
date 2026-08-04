@@ -46,6 +46,11 @@ function gitPost<T>(route: string, body: Record<string, unknown>): Promise<T> {
 }
 
 const remoteGit: GitBridge = {
+  // Present here as well as over IPC so creating a project in remote-gateway mode
+  // still gets a repo. Without it, `git init` would silently no-op for remote
+  // projects and every branch-shaped feature downstream would look broken there.
+  init: (dirPath: string) => gitPost('init', { path: dirPath }),
+
   worktreeList: async repoPath =>
     (await gitGet<{ worktrees: HermesGitWorktree[] }>('worktrees', { path: repoPath })).worktrees,
 

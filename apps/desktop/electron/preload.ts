@@ -156,6 +156,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   github: {
     clone: options => ipcRenderer.invoke('hermes:github:clone', options),
     connect: token => ipcRenderer.invoke('hermes:github:connect', token),
+    devicePoll: deviceCode => ipcRenderer.invoke('hermes:github:devicePoll', deviceCode),
+    deviceStart: () => ipcRenderer.invoke('hermes:github:deviceStart'),
     connectRemote: options => ipcRenderer.invoke('hermes:github:connectRemote', options),
     createRepo: options => ipcRenderer.invoke('hermes:github:createRepo', options),
     disconnect: () => ipcRenderer.invoke('hermes:github:disconnect'),

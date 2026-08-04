@@ -100,6 +100,97 @@ export async function connectGitHub(token: string): Promise<null | string> {
   }
 }
 
+/** Shown while the browser half of device-flow sign-in is pending. */
+export interface DeviceFlowPending {
+  expiresAt: number
+  userCode: string
+  verificationUri: string
+}
+
+export const $githubDeviceFlow = atom<DeviceFlowPending | null>(null)
+
+let deviceFlowCancelled = false
+
+/** Abandon a pending sign-in. The browser tab is the user's to close. */
+export function cancelGitHubDeviceFlow(): void {
+  deviceFlowCancelled = true
+  $githubDeviceFlow.set(null)
+}
+
+/**
+ * Sign in through GitHub's device flow.
+ *
+ * Resolves with the login on success, or null if it was cancelled, expired, or
+ * failed. The polling loop lives here rather than in the main process so the UI can
+ * show the code, show progress, and cancel.
+ *
+ * GitHub's `interval` is respected and `slow_down` widens it — ignoring either gets
+ * the flow rate-limited, which surfaces as an unexplained failure well after the
+ * cause.
+ */
+export async function signInWithGitHub(): Promise<null | string> {
+  const api = bridge()
+
+  if (!api?.deviceStart) {
+    notifyError(new Error('GitHub sign-in is only available in the desktop app.'), 'GitHub unavailable')
+
+    return null
+  }
+
+  deviceFlowCancelled = false
+  $githubBusy.set(true)
+
+  try {
+    const start = await api.deviceStart()
+
+    $githubDeviceFlow.set({
+      expiresAt: Date.now() + start.expiresIn * 1000,
+      userCode: start.userCode,
+      verificationUri: start.verificationUri
+    })
+
+    let waitMs = Math.max(start.interval, 1) * 1000
+    const deadline = Date.now() + start.expiresIn * 1000
+
+    while (Date.now() < deadline) {
+      if (deviceFlowCancelled) {
+        return null
+      }
+
+      await new Promise(resolve => setTimeout(resolve, waitMs))
+
+      if (deviceFlowCancelled) {
+        return null
+      }
+
+      const result = await api.devicePoll(start.deviceCode)
+
+      if (result.connected && result.login) {
+        $github.set({ connected: true, login: result.login })
+        $githubDeviceFlow.set(null)
+        $githubRepos.set(null)
+
+        return result.login
+      }
+
+      if (result.slowDown) {
+        waitMs += 5000
+      }
+    }
+
+    notifyError(new Error('The sign-in code expired before it was approved.'), 'GitHub sign-in timed out')
+
+    return null
+  } catch (error) {
+    notifyError(error, 'GitHub sign-in failed')
+
+    return null
+  } finally {
+    $githubDeviceFlow.set(null)
+    $githubBusy.set(false)
+  }
+}
+
 export async function disconnectGitHub(): Promise<void> {
   try {
     await bridge()?.disconnect()

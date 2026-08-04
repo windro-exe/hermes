@@ -105,6 +105,8 @@ import {
 import { gitRootForIpc } from './git-root'
 import {
   cloneRepo as githubCloneRepo,
+  pollDeviceFlow as githubPollDeviceFlow,
+  startDeviceFlow as githubStartDeviceFlow,
   connectRemote as githubConnectRemote,
   createRepo as githubCreateRepo,
   identify as githubIdentify,
@@ -10747,6 +10749,35 @@ ipcMain.handle('hermes:github:connect', async (_event, token) => {
   _writeGithubToken(raw)
 
   return identity
+})
+
+// Device-flow sign-in. Two calls: start (returns the code to show and the URL to
+// open) and poll (one exchange attempt). The renderer drives the loop so it can
+// show progress and cancel; keeping the loop in the main process would make
+// cancellation and UI feedback awkward for no benefit.
+ipcMain.handle('hermes:github:deviceStart', async () => {
+  const start = await githubStartDeviceFlow()
+
+  // Opening the browser here, not in the renderer, so it goes through Electron's
+  // vetted external-open path rather than a window.open from web content.
+  void shell.openExternal(start.verificationUri)
+
+  return start
+})
+
+ipcMain.handle('hermes:github:devicePoll', async (_event, deviceCode) => {
+  const result = await githubPollDeviceFlow(String(deviceCode || ''))
+
+  if (result.token) {
+    // Same validate-then-store rule as the paste path: confirm the token works
+    // before recording it.
+    const identity = await githubIdentify(result.token)
+    _writeGithubToken(result.token)
+
+    return { connected: true, login: identity.login, name: identity.name }
+  }
+
+  return { connected: false, slowDown: Boolean(result.slowDown) }
 })
 
 ipcMain.handle('hermes:github:status', async () => {

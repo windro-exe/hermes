@@ -170,6 +170,21 @@ declare global {
       github?: {
         clone: (options: { cloneUrl: string; targetDir: string }) => Promise<{ ok: boolean; path: string }>
         connect: (token: string) => Promise<{ login: string; name: null | string }>
+        /** One device-flow exchange attempt. `connected` false means keep polling. */
+        devicePoll: (deviceCode: string) => Promise<{
+          connected: boolean
+          login?: string
+          name?: null | string
+          slowDown?: boolean
+        }>
+        /** Begin device-flow sign-in and open the verification page. */
+        deviceStart: () => Promise<{
+          deviceCode: string
+          expiresIn: number
+          interval: number
+          userCode: string
+          verificationUri: string
+        }>
         connectRemote: (options: {
           cloneUrl: string
           repoDir: string

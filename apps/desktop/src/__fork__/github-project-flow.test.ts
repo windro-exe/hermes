@@ -217,3 +217,109 @@ describe('connect failures surface instead of silently doing nothing', () => {
     spy.mockRestore()
   })
 })
+
+describe('device-flow sign-in', () => {
+  const ops = () => source('electron/github-ops.ts')
+
+  it('uses a public client id and no secret', () => {
+    // Device flow is defined for PUBLIC clients: there is no secret, and shipping
+    // one in a desktop app would not be secret anyway.
+    const src = ops()
+
+    expect(src).toContain('DEVICE_CLIENT_ID')
+    expect(src, 'a client secret must never be in the bundle').not.toMatch(/client_secret/i)
+  })
+
+  it('does not borrow another product client id', () => {
+    // Reusing the GitHub CLI's id is a known trick and it makes the consent screen
+    // lie about who is asking.
+    expect(ops()).not.toMatch(/178c6fc778ccc68e1d6a/i)
+  })
+
+  it('honours the poll interval and slow_down', () => {
+    const store = source('src/store/github.ts')
+
+    // Ignoring either gets the flow rate-limited, which surfaces later as an
+    // unexplained failure.
+    expect(store).toContain('start.interval')
+    expect(store).toMatch(/slowDown/)
+  })
+
+  it('distinguishes pending from failed', () => {
+    // authorization_pending is the normal state for most of the flow; treating it
+    // as an error would abort every sign-in.
+    const src = ops()
+
+    expect(src).toContain('authorization_pending')
+    expect(src).toContain('expired_token')
+    expect(src).toContain('access_denied')
+  })
+
+  it('validates the device-flow token before storing it, like the paste path', () => {
+    const main = source('electron/main.ts')
+    const handler = main.slice(main.indexOf("ipcMain.handle('hermes:github:devicePoll'"))
+    const body = handler.slice(0, handler.indexOf('\n})'))
+    const validate = body.indexOf('githubIdentify(')
+    const persist = body.indexOf('_writeGithubToken(')
+
+    expect(validate).toBeGreaterThan(-1)
+    expect(persist).toBeGreaterThan(-1)
+    expect(validate).toBeLessThan(persist)
+  })
+
+  it('opens the browser from the main process', () => {
+    // Not a window.open from web content.
+    const main = source('electron/main.ts')
+    const handler = main.slice(main.indexOf("ipcMain.handle('hermes:github:deviceStart'"))
+
+    expect(handler.slice(0, 500)).toContain('shell.openExternal')
+  })
+
+  it('can be cancelled', () => {
+    const store = source('src/store/github.ts')
+
+    expect(store).toContain('cancelGitHubDeviceFlow')
+  })
+})
+
+describe('the connection is one account for the whole app', () => {
+  it('stores the token in a single place, not per project', () => {
+    // So signing in from the project dialog shows as signed in in Settings, and
+    // creating a second project never asks again.
+    const main = source('electron/main.ts')
+    const writer = main.slice(main.indexOf('function _githubTokenPath'))
+
+    expect(writer.slice(0, 200)).toContain("'github-token.json'")
+    expect(main, 'the token path must not be keyed by project or folder').not.toMatch(
+      /github-token[^\n]*\$\{(project|folder|cwd)/
+    )
+  })
+
+  it('settings and the project dialog read the same store', () => {
+    const settings = source('src/app/settings/github-settings.tsx')
+    const picker = source('src/app/chat/sidebar/projects/github-repo-picker.tsx')
+
+    for (const src of [settings, picker]) {
+      expect(src).toContain("from '@/store/github'")
+      expect(src).toContain('$github')
+    }
+  })
+
+  it('offers sign out in settings', () => {
+    const settings = source('src/app/settings/github-settings.tsx')
+
+    expect(settings).toContain('disconnectGitHub')
+    expect(settings).toContain('Sign out')
+  })
+
+  it('is reachable as its own settings view', () => {
+    expect(source('src/app/settings/types.ts')).toContain("| 'github'")
+    expect(source('src/app/settings/index.tsx')).toContain('<GitHubSettings />')
+  })
+
+  it('says signing out does not revoke on GitHub', () => {
+    // Removing a local token and revoking access are different things, and
+    // implying otherwise would leave someone believing they had revoked it.
+    expect(source('src/app/settings/github-settings.tsx')).toMatch(/does not revoke/i)
+  })
+})

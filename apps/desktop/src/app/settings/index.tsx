@@ -36,6 +36,7 @@ import { BillingSettings } from './billing'
 import { ConfigSettings } from './config-settings'
 import { SECTIONS } from './constants'
 import { GatewaySettings } from './gateway-settings'
+import { GitHubSettings } from './github-settings'
 import { KeybindSettings } from './keybind-settings'
 import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
 import { NotificationsSettings } from './notifications-settings'
@@ -49,6 +50,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'providers',
   'gateway',
   'keybinds',
+  'github',
   'keys',
   'notifications',
   'billing',
@@ -206,6 +208,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       onSelect: () => setActiveView('keybinds')
     },
     {
+      active: activeView === 'github',
+      icon: KeyRound,
+      id: 'github',
+      label: 'GitHub',
+      onSelect: () => setActiveView('github')
+    },
+    {
       active: activeView === 'keys',
       children: [
         {
@@ -312,6 +321,8 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
               onViewChange={setProviderView}
               view={providerView}
             />
+          ) : activeView === 'github' ? (
+            <GitHubSettings />
           ) : activeView === 'keys' ? (
             <KeysSettings view={keysView} />
           ) : activeView === 'notifications' ? (

@@ -21,13 +21,16 @@ import { cn } from '@/lib/utils'
 import {
   $github,
   $githubBusy,
+  $githubDeviceFlow,
   $githubRepos,
+  cancelGitHubDeviceFlow,
   connectGitHub,
   createGitHubRepo,
   disconnectGitHub,
   loadGitHubRepos,
   normalizeRepoName,
-  refreshGitHubStatus
+  refreshGitHubStatus,
+  signInWithGitHub
 } from '@/store/github'
 
 const TOKEN_HELP = 'github.com → Settings → Developer settings → Personal access tokens'
@@ -46,6 +49,7 @@ export function GitHubRepoPicker({
   const connection = useStore($github)
   const repos = useStore($githubRepos)
   const busy = useStore($githubBusy)
+  const pending = useStore($githubDeviceFlow)
 
   const [token, setToken] = useState('')
   const [filter, setFilter] = useState('')
@@ -74,14 +78,65 @@ export function GitHubRepoPicker({
 
   const locked = Boolean(disabled) || busy
 
+  // Sign-in is in progress: the browser is open and we are polling.
+  if (pending) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-(--ui-stroke-secondary) p-2.5">
+        <span className="text-[0.75rem] font-medium">Finish signing in on GitHub</span>
+        <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
+          Your browser should have opened. Enter this code there:
+        </span>
+        <div className="flex items-center gap-2">
+          <code className="rounded bg-(--ui-control-hover-background) px-2 py-1 font-mono text-[0.9375rem] tracking-[0.15em]">
+            {pending.userCode}
+          </code>
+          <Button
+            onClick={() => void navigator.clipboard?.writeText(pending.userCode)}
+            size="xs"
+            type="button"
+            variant="ghost"
+          >
+            Copy
+          </Button>
+        </div>
+        <span className="text-[0.625rem] text-(--ui-text-quaternary)">{pending.verificationUri}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[0.6875rem] text-(--ui-text-tertiary)">Waiting for approval…</span>
+          <Button
+            className="ml-auto"
+            onClick={() => cancelGitHubDeviceFlow()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!connection.connected) {
     return (
       <div className="flex flex-col gap-2 rounded-md border border-(--ui-stroke-secondary) p-2.5">
         <span className="text-[0.75rem] font-medium">Connect GitHub</span>
-        <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
-          Paste a personal access token with <span className="font-medium">repo</span> access. It is stored encrypted by
-          your operating system and never leaves this machine.
+        <Button disabled={locked} onClick={() => void signInWithGitHub()} size="sm" type="button">
+          <Codicon name="github" size="0.75rem" />
+          Sign in with GitHub
+        </Button>
+        <span className="text-[0.625rem] text-(--ui-text-quaternary)">
+          Opens github.com in your browser. Nothing to copy or paste.
         </span>
+        <details className="mt-1">
+          <summary className="cursor-pointer text-[0.6875rem] text-(--ui-text-tertiary)">
+            Use a token instead
+          </summary>
+          <span className="mt-1 block text-[0.6875rem] text-(--ui-text-tertiary)">
+            Paste a personal access token with <span className="font-medium">repo</span> access. Useful offline, or to
+            scope a fine-grained token to a single repository. Stored encrypted by your operating system and never
+            leaves this machine.
+          </span>
+        </details>
         {connection.error && (
           <span className="text-[0.6875rem] text-(--ui-text-danger)">{connection.error}</span>
         )}

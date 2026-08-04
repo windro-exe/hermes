@@ -24,6 +24,130 @@ import { execFile } from 'node:child_process'
 const API = 'https://api.github.com'
 const UA = 'hermes-desktop'
 
+/**
+ * OAuth app client id for the device flow.
+ *
+ * Public by design — a device-flow client is a PUBLIC client, so there is no
+ * secret involved and nothing here is sensitive. GitHub's docs are explicit that
+ * the client id is not a credential.
+ *
+ * Deliberately not the GitHub CLI's id. Borrowing another product's client id is a
+ * common trick and it means the consent screen lies about who is asking.
+ */
+const DEVICE_CLIENT_ID = 'Ov23liaTFoBjSIYSbidk'
+
+/**
+ * Scope requested at sign-in.
+ *
+ * `repo` is the narrowest scope that covers what the project flow does: list
+ * private repositories, create one, and push to it. A read-only scope cannot
+ * create, and there is no finer-grained OAuth scope for "repositories I choose" —
+ * that granularity only exists for fine-grained PATs, which is why the token-paste
+ * path stays available for anyone who wants to scope tighter.
+ */
+const DEVICE_SCOPE = 'repo'
+
+export interface DeviceFlowStart {
+  /** Seconds until `deviceCode` stops being accepted. */
+  expiresIn: number
+  /** Seconds GitHub asks us to wait between polls. */
+  interval: number
+  deviceCode: string
+  userCode: string
+  verificationUri: string
+}
+
+async function oauthForm<T>(path: string, body: Record<string, string>): Promise<T> {
+  const response = await fetch(`https://github.com${path}`, {
+    body: new URLSearchParams(body).toString(),
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/x-www-form-urlencoded',
+      'user-agent': UA
+    },
+    method: 'POST'
+  })
+
+  if (!response.ok) {
+    throw new Error(`GitHub returned ${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as T
+}
+
+/** Ask GitHub for a device code. The user enters `userCode` at `verificationUri`. */
+export async function startDeviceFlow(): Promise<DeviceFlowStart> {
+  const body = await oauthForm<{
+    device_code?: string
+    error?: string
+    error_description?: string
+    expires_in?: number
+    interval?: number
+    user_code?: string
+    verification_uri?: string
+  }>('/login/device/code', { client_id: DEVICE_CLIENT_ID, scope: DEVICE_SCOPE })
+
+  if (body.error || !body.device_code || !body.user_code) {
+    // The overwhelmingly likely cause is device flow not being enabled on the
+    // OAuth app, and GitHub's raw error for that is unhelpful.
+    const detail = body.error_description || body.error || 'no device code returned'
+    throw new Error(
+      `GitHub would not start the sign-in (${detail}). Check that "Enable Device Flow" is ticked on the OAuth app.`
+    )
+  }
+
+  return {
+    deviceCode: body.device_code,
+    // Defaults per GitHub's documented behaviour when the fields are absent.
+    expiresIn: body.expires_in ?? 900,
+    interval: body.interval ?? 5,
+    userCode: body.user_code,
+    verificationUri: body.verification_uri || 'https://github.com/login/device'
+  }
+}
+
+/**
+ * Exchange a device code for a token, once.
+ *
+ * Returns `null` while the user has not finished approving, so the caller drives
+ * the polling loop and can cancel. `slowDown` asks the caller to back off —
+ * ignoring it gets the flow rate-limited, which presents as a mysterious failure.
+ */
+export async function pollDeviceFlow(
+  deviceCode: string
+): Promise<{ slowDown?: boolean; token: null | string }> {
+  const body = await oauthForm<{
+    access_token?: string
+    error?: string
+    error_description?: string
+  }>('/login/oauth/access_token', {
+    client_id: DEVICE_CLIENT_ID,
+    device_code: deviceCode,
+    grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+  })
+
+  if (body.access_token) {
+    return { token: body.access_token }
+  }
+
+  switch (body.error) {
+    case 'authorization_pending':
+      return { token: null }
+
+    case 'slow_down':
+      return { slowDown: true, token: null }
+
+    case 'expired_token':
+      throw new Error('The sign-in code expired. Start again.')
+
+    case 'access_denied':
+      throw new Error('Sign-in was cancelled on GitHub.')
+
+    default:
+      throw new Error(body.error_description || body.error || 'GitHub sign-in failed.')
+  }
+}
+
 export interface GitHubIdentity {
   login: string
   name: null | string

@@ -38,6 +38,26 @@ _MCP_PRESETS: Dict[str, Dict[str, Any]] = {
         "command": "codex",
         "args": ["mcp-server"],
     },
+    # Supabase's own MCP server, rather than a hand-written Supabase tool: it is
+    # maintained by Supabase, tracks their API, and covers projects, migrations,
+    # SQL, edge functions, logs and advisors in one surface.
+    #
+    # `--read-only` is deliberate. It maps the connection to a read-only Postgres
+    # role, so the agent can inspect schema and query data but cannot DROP, DELETE
+    # or migrate. An agent with unrestricted DDL on a live database is the textbook
+    # hard-to-reverse action, and a wrong guess there costs real data. Drop the flag
+    # when you actually want migrations:
+    #     hermes mcp add supabase --command npx \
+    #       --arg -y --arg @supabase/mcp-server-supabase@latest
+    #
+    # Needs a personal access token in SUPABASE_ACCESS_TOKEN (create one at
+    # https://supabase.com/dashboard/account/tokens). Add `--project-ref=<ref>` to
+    # pin it to a single project instead of the whole account — worth doing, since
+    # an account-wide token lets it read every project you own.
+    "supabase": {
+        "command": "npx",
+        "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only"],
+    },
 }
 
 

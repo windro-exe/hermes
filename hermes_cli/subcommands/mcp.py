@@ -59,7 +59,22 @@ def build_mcp_parser(subparsers, *, cmd_mcp: Callable) -> None:
         help="Arguments for stdio command; must be the last option",
     )
     mcp_add_p.add_argument("--auth", choices=["oauth", "header"], help="Auth method")
-    mcp_add_p.add_argument("--preset", help="Known MCP preset name")
+    # choices, so `hermes mcp add --help` actually lists what presets exist.
+    # Without it the flag is undiscoverable: you have to read mcp_config.py to learn
+    # that any preset is available at all. Imported lazily inside the try so a
+    # refactor of mcp_config can never stop the CLI from parsing.
+    try:
+        from hermes_cli.mcp_config import _MCP_PRESETS
+
+        _preset_names = sorted(_MCP_PRESETS)
+    except Exception:
+        _preset_names = None
+
+    mcp_add_p.add_argument(
+        "--preset",
+        choices=_preset_names,
+        help="Known MCP preset name" + (f" ({', '.join(_preset_names)})" if _preset_names else ""),
+    )
     mcp_add_p.add_argument(
         "--connect-timeout",
         type=float,

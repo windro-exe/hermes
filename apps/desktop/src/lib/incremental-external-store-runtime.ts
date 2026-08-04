@@ -76,6 +76,66 @@ function applyChangedMessages(
   return true
 }
 
+/**
+ * Order `items` so a message is always inserted after its parent.
+ *
+ * `addOrUpdateMessage` has two hard requirements, both confirmed by probing the
+ * repository directly: the parent must already exist ("addOrUpdateMessage: Parent
+ * message not found"), and a message may not be linked beneath something that is
+ * currently its own descendant ("performOp/link: A message with the same id
+ * already exists in the parent tree" — worded as an id clash, but it is a cycle
+ * check).
+ *
+ * A plain linear transcript already satisfies this, so this is a no-op for the
+ * common case and returns the input array untouched. It matters when the incoming
+ * order does not happen to be parent-first, where replaying it verbatim throws and
+ * leaves a half-built tree that every later sync reconciles against — the state
+ * behind an unrecoverable "workspace failed to render".
+ *
+ * Entries whose parent is absent from `items` are emitted in their original
+ * relative order at the end, so a genuinely malformed input still reaches the
+ * repository and surfaces its own error rather than being silently dropped here.
+ */
+function parentsBeforeChildren<T extends { message: { id: string }; parentId: null | string }>(
+  items: readonly T[]
+): readonly T[] {
+  const byId = new Map(items.map(item => [item.message.id, item]))
+  const ordered: T[] = []
+  const placed = new Set<string>()
+  const visiting = new Set<string>()
+  let needsReorder = false
+
+  const place = (item: T): void => {
+    const id = item.message.id
+
+    if (placed.has(id) || visiting.has(id)) {
+      return
+    }
+
+    visiting.add(id)
+
+    const parentId = item.parentId
+    const parent = parentId ? byId.get(parentId) : undefined
+
+    if (parent && !placed.has(parentId as string)) {
+      needsReorder = true
+      place(parent)
+    }
+
+    visiting.delete(id)
+    placed.add(id)
+    ordered.push(item)
+  }
+
+  for (const item of items) {
+    place(item)
+  }
+
+  // Preserve identity when nothing moved — callers compare arrays, and a fresh
+  // array for every sync would defeat that.
+  return needsReorder ? ordered : items
+}
+
 export function syncRepositoryIncrementally(
   runtime: ExternalStoreThreadRuntimeCore,
   messageRepository: NonNullable<ExternalStoreAdapter['messageRepository']>
@@ -92,10 +152,31 @@ export function syncRepositoryIncrementally(
   const incomingIds = new Set(incoming.map(({ message }) => message.id))
   const disjoint = existing.length > 0 && !existing.some(({ message }) => incomingIds.has(message.id))
 
+  // Re-parenting has to take the same clear-and-rebuild path.
+  //
+  // `addOrUpdateMessage` cannot move a message that is already in the tree: the
+  // repository walks up from the new parent and throws if it meets the message
+  // itself ("performOp/link: A message with the same id already exists in the
+  // parent tree" — misleading wording for what is really a cycle check). So if a
+  // message keeps its id but acquires a different parent, updating it in place
+  // can link it beneath its own descendant and take the whole thread render down
+  // with an unrecoverable error — which is what happened to windro's session: it
+  // rendered as "workspace failed to render" with a Retry that could not
+  // succeed, because every retry replayed the same restructure.
+  //
+  // Detected up front rather than caught after the fact, because a partially
+  // mutated tree is not safe to keep reconciling against.
+  const existingParents = new Map(existing.map(({ message, parentId }) => [message.id, parentId ?? null]))
+
+  const reparented = incoming.some(
+    ({ message, parentId }) =>
+      existingParents.has(message.id) && existingParents.get(message.id) !== (parentId ?? null)
+  )
+
   // Steady-state streaming: same message set, one item changed. Skip the
   // whole-transcript rewrite, the prune scan, and the second export. resetHead
   // deletes the head's descendants, so it only runs when the head really moved.
-  if (!disjoint && applyChangedMessages(repository, existing, incoming)) {
+  if (!disjoint && !reparented && applyChangedMessages(repository, existing, incoming)) {
     if (repository.headId !== headId) {
       repository.resetHead(headId)
     }
@@ -103,14 +184,36 @@ export function syncRepositoryIncrementally(
     return repository.getMessages()
   }
 
-  if (disjoint) {
+  if (disjoint || reparented) {
     for (const { message } of [...existing].reverse()) {
       repository.deleteMessage(message.id)
     }
   }
 
-  for (const { message, parentId } of incoming) {
-    repository.addOrUpdateMessage(parentId, message)
+  try {
+    for (const { message, parentId } of parentsBeforeChildren(incoming)) {
+      repository.addOrUpdateMessage(parentId, message)
+    }
+  } catch (error) {
+    // Last resort. The check above covers the restructure we understand, but a
+    // throw here leaves a half-updated tree that every later sync reconciles
+    // against, so the thread stays broken until the app restarts — the user sees
+    // a dead "workspace failed to render" with a Retry that cannot work.
+    //
+    // Rebuilding from empty is always representable: `incoming` is a complete
+    // transcript, not a delta. The cost is one full re-render, which is the
+    // correct trade against an unrecoverable thread. Logged rather than
+    // swallowed, because reaching this means the up-front detection missed a case
+    // and that is worth knowing.
+    console.warn('[hermes] incremental thread sync failed; rebuilding from scratch', error)
+
+    for (const { message } of [...repository.export().messages].reverse()) {
+      repository.deleteMessage(message.id)
+    }
+
+    for (const { message, parentId } of parentsBeforeChildren(incoming)) {
+      repository.addOrUpdateMessage(parentId, message)
+    }
   }
 
   for (const { message } of repository.export().messages) {

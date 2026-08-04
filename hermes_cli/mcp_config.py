@@ -50,12 +50,34 @@ _MCP_PRESETS: Dict[str, Dict[str, Any]] = {
     #     hermes mcp add supabase --command npx \
     #       --arg -y --arg @supabase/mcp-server-supabase@latest
     #
-    # Needs a personal access token in SUPABASE_ACCESS_TOKEN (create one at
-    # https://supabase.com/dashboard/account/tokens). Add `--project-ref=<ref>` to
-    # pin it to a single project instead of the whole account — worth doing, since
-    # an account-wide token lets it read every project you own.
+    # The token must be declared ON THE SERVER with --env; exporting it in your
+    # shell is not enough, because Hermes does not forward ambient environment to
+    # stdio MCP children. Get one at
+    # https://supabase.com/dashboard/account/tokens, then:
+    #     hermes mcp add supabase --env SUPABASE_ACCESS_TOKEN=<pat> --preset supabase
+    #
+    # Without it the server prints "Please provide a personal access token" to
+    # stderr and exits with empty stdout, which Hermes reports only as
+    # "Failed to connect: Connection closed" — no mention of a token. Both of this
+    # preset's failure modes look identical from the CLI, so they are written down
+    # here rather than left to be rediscovered.
+    #
+    # Scoping: the token is account-wide, so the server can read EVERY project you
+    # own. To pin it to one, add the ref to the args instead of using --preset:
+    #     hermes mcp add supabase --env SUPABASE_ACCESS_TOKEN=<pat> --command npx.cmd \
+    #       --args -y @supabase/mcp-server-supabase@latest --read-only \
+    #       --project-ref=<ref>
+    # (--args is argparse.REMAINDER, so it must come last.)
     "supabase": {
-        "command": "npx",
+        # `npx.cmd` on Windows, not `npx`.
+        #
+        # Windows ships npx as a .cmd shim, and CreateProcess cannot execute it:
+        # Popen(["npx", ...]) raises FileNotFoundError [WinError 2] while
+        # Popen(["npx.cmd", ...]) works. Hermes spawns stdio MCP servers without a
+        # shell, so a bare "npx" preset fails with "Connection closed" and gives no
+        # hint why. Confirmed on this box: npx -> FileNotFoundError,
+        # npx.cmd -> 11.12.1.
+        "command": "npx.cmd" if os.name == "nt" else "npx",
         "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only"],
     },
 }

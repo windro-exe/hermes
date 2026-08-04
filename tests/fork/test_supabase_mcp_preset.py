@@ -40,7 +40,8 @@ class TestSupabasePreset:
     def test_resolves_to_supabases_own_server(self):
         config = apply("supabase")
 
-        assert config["command"] == "npx"
+        # npx.cmd on Windows, npx elsewhere — see TestSpawnableOnThisPlatform.
+        assert config["command"] in {"npx", "npx.cmd"}
         assert any("@supabase/mcp-server-supabase" in arg for arg in config["args"])
 
     def test_is_read_only_by_default(self):
@@ -120,3 +121,44 @@ class TestPresetsAreDiscoverable:
         action = self._preset_action()
 
         assert sorted(action.choices) == sorted(_MCP_PRESETS)
+
+class TestSpawnableOnThisPlatform:
+    """Both of this preset's real failure modes surfaced only as
+    "Failed to connect: Connection closed", so they get guards."""
+
+    def test_command_is_spawnable_without_a_shell(self):
+        """Windows ships npx as a .cmd shim and CreateProcess cannot exec it:
+        Popen(["npx", ...]) raises FileNotFoundError while npx.cmd works. Hermes
+        spawns stdio MCP servers without a shell, so a bare "npx" preset fails on
+        every Windows box."""
+        import os
+        import shutil
+
+        config = apply("supabase")
+        command = config["command"]
+
+        if os.name == "nt":
+            assert command.endswith(".cmd"), (
+                "on Windows the preset must use npx.cmd; a bare npx raises "
+                "FileNotFoundError when spawned without a shell"
+            )
+
+        assert shutil.which(command) or shutil.which(command.removesuffix(".cmd")), (
+            f"{command} is not on PATH, so the server can never start"
+        )
+
+    def test_preset_documents_that_the_token_needs_env(self):
+        """Hermes does not forward ambient env to stdio MCP children, so exporting
+        SUPABASE_ACCESS_TOKEN in a shell is not enough — it must be declared with
+        --env on the server."""
+        import inspect
+
+        from hermes_cli import mcp_config
+
+        source = inspect.getsource(mcp_config)
+        start = source.index('"supabase": {')
+        block = source[max(0, start - 2000):start]
+
+        assert "--env" in block, "the preset must document that --env is required"
+        assert "SUPABASE_ACCESS_TOKEN" in block
+

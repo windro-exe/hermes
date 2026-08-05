@@ -118,10 +118,15 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-04 | Fixed | [Connected GitHub account is the agent's credential](entries/2026-08-04-07-github-agent-auth.md) | current |
+| 2026-08-04 | Fixed | [One session under two lanes: the real cause](entries/2026-08-04-08-branch-lane-id-real-cause.md) | current |
+| 2026-08-04 | Changed | [Renderer bundle 27.23 MB -> 18.23 MB (Shiki dedupe)](entries/2026-08-04-06-shiki-dedupe.md) | current |
+| 2026-08-04 | Added | [Supabase as an MCP preset, read-only by default](entries/2026-08-04-05-supabase-mcp-preset.md) | current |
+| 2026-08-04 | Added | [Sign in to GitHub through the browser, and Settings](entries/2026-08-04-04-github-device-flow-and-settings.md) | current |
 | 2026-08-04 | Added | [Connect a GitHub account, and clone or create a repo when making a project](entries/2026-08-04-04-github-project-flow.md) | current |
 | 2026-08-04 | Added | [Creating a project now makes its folder a git repo](entries/2026-08-04-03-project-git-init.md) | current |
 | 2026-08-04 | Fixed | [A restructured transcript could kill the thread render permanently](entries/2026-08-04-02-thread-sync-hardening.md) | current |
-| 2026-08-04 | Fixed | [One session rendered under two lanes (branch lane id)](entries/2026-08-04-01-branch-lane-id.md) | current |
+| 2026-08-04 | Fixed | [One session rendered under two lanes (branch lane id)](entries/2026-08-04-01-branch-lane-id.md) | superseded by 08 |
 | 2026-08-03 | Added | [See which project rules the agent is actually running on](entries/2026-08-03-02-rules-inspector.md) | current |
 | 2026-08-03 | Fixed | [A toast pushed off screen never learned it was gone](entries/2026-08-03-01-notification-eviction.md) | current |
 | 2026-08-02 | Fixed | [`hermes update` no longer resets away unpushed commits](entries/2026-08-02-03-update-unpushed-guard.md) | current |

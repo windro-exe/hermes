@@ -1,6 +1,7 @@
 # One session rendered under two lanes: the label fallback leaked into the lane id
 
 **Date:** 2026-08-04
+**Status:** SUPERSEDED by `entries/2026-08-04-08-branch-lane-id-real-cause.md` — the fix described here was based on a misreading and was reverted.
 **Type:** Fixed
 **Branch:** `main`
 

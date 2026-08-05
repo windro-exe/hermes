@@ -1,0 +1,120 @@
+# Build Linux installers for the desktop app.
+#
+# Exists because Linux packages cannot be produced on windro's Windows box: the
+# repo's own before-pack step refuses to cross-compile, and it is right to —
+#
+#   [stage-native-deps] no prebuilt binary for linux-x64 and cannot cross-compile
+#   native modules from win32-x64. Build on the target platform or provide a prebuild.
+#
+# node-pty (the terminal pane) is a native module and needs a real linux-x64 build.
+# WSL is present on that machine but cannot start (the Windows virtualization
+# feature is not installed), and Docker is not installed either. A GitHub-hosted
+# Ubuntu runner is the remaining Linux host.
+#
+# workflow_dispatch ONLY, deliberately. This fork has ~22 workflows and 10 of them
+# trigger on push; that volume of notification mail is why Actions was switched off
+# for the repo. This one can never fire by itself — it runs when a human asks.
+name: Build Linux installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'electron-builder linux targets (space separated)'
+        required: false
+        default: 'AppImage deb'
+        type: string
+
+# Least privilege: this only reads the repo and uploads artifacts.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # A full npm ci plus an Electron download plus three package formats.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Electron's own runtime libraries, needed by electron-builder while it
+      # packs (and by anything that launches the binary). Mirrors the list
+      # e2e-desktop.yml already uses, minus xvfb — nothing is launched here.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 \
+            xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2t64 \
+            fakeroot rpm
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Full install, NOT --ignore-scripts: electron's postinstall fetches the
+      # binary that gets packaged, and node-pty's native build is the whole
+      # reason this job exists.
+      - uses: ./.github/actions/retry
+        with:
+          command: npm ci
+
+      - name: Build renderer and main bundles
+        working-directory: apps/desktop
+        run: npm run build
+
+      # Fail loudly here rather than shipping a package with a Windows binary
+      # inside it. before-pack stages node-pty per target; if that silently
+      # produced the wrong arch, the app would install and then have a dead
+      # terminal pane.
+      - name: Verify node-pty was staged for linux-x64
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          staged="dist/node_modules/node-pty"
+          if [ ! -d "$staged" ]; then
+            echo "::error::node-pty was not staged into dist/node_modules"
+            exit 1
+          fi
+          if ! find "$staged" -name '*.node' | head -1 | grep -q .; then
+            echo "::error::no compiled .node binary found under $staged"
+            exit 1
+          fi
+          find "$staged" -name '*.node' -exec file {} \;
+          find "$staged" -name '*.node' -exec sh -c 'file "$1" | grep -q ELF || { echo "::error::$1 is not an ELF binary"; exit 1; }' _ {} \;
+
+      - name: Package Linux installers
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          targets="${{ inputs.targets }}"
+          echo "Packaging: $targets"
+          npm run builder -- --linux $targets
+
+      - name: Summarise artifacts
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          ls -la release/ || true
+          {
+            echo '### Linux installers'
+            echo
+            echo '| file | size |'
+            echo '| --- | --- |'
+            for f in release/*.AppImage release/*.deb release/*.rpm; do
+              [ -e "$f" ] || continue
+              printf '| `%s` | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hermes-linux-installers
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm

@@ -10770,9 +10770,25 @@ function githubAgentEnv(): Record<string, string> {
 
   return {
     GITHUB_TOKEN: token,
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'credential.https://github.com.helper',
-    GIT_CONFIG_VALUE_0: helper
+    GIT_CONFIG_COUNT: '2',
+    // Entry 0 RESETS the helper list; entry 1 installs ours. Both are required.
+    //
+    // Adding a helper is not enough: git runs every configured helper in order
+    // and takes the first answer. windro has `credential.helper=store` globally,
+    // which reads a plaintext token from ~/.git-credentials and answers FIRST —
+    // measured with `git credential fill`, which returned that old token rather
+    // than the connected account. An empty helper value clears the list
+    // assembled so far, so ours is the only one left to answer for github.com.
+    //
+    // The reset is deliberately UNSCOPED (`credential.helper`) because the global
+    // `store` entry is unscoped too — a github.com-scoped reset would not clear
+    // it. Non-GitHub hosts are unaffected in practice: entry 1 only answers for
+    // github.com, so other remotes fall through to no helper, exactly as they
+    // would for a user with no global helper configured.
+    GIT_CONFIG_KEY_0: 'credential.helper',
+    GIT_CONFIG_VALUE_0: '',
+    GIT_CONFIG_KEY_1: 'credential.https://github.com.helper',
+    GIT_CONFIG_VALUE_1: helper
   }
 }
 

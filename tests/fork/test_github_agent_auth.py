@@ -51,13 +51,25 @@ class TestAgentGetsTheConnectedAccount:
         assert "GIT_CONFIG_KEY_0" in body
         assert "credential.https://github.com.helper" in body
 
-    def test_the_helper_is_scoped_to_github(self, main_src):
-        """A host-less `credential.helper` would answer for every remote."""
+    def test_the_helper_itself_is_scoped_to_github(self, main_src):
+        """The helper that ANSWERS must be github.com-scoped, so a GitHub token is
+        never offered to another host. The unscoped entry is a reset (empty
+        value), which supplies nothing."""
         body = self._fn_body(main_src)
 
-        assert "credential.helper" not in body.replace(
-            "credential.https://github.com.helper", ""
-        ), "the credential helper must be scoped to https://github.com, not global"
+        assert "GIT_CONFIG_KEY_1: 'credential.https://github.com.helper'" in body
+        assert "GIT_CONFIG_VALUE_1: helper" in body
+
+    def test_it_resets_the_helper_list_first(self, main_src):
+        """Adding a helper is not enough. git runs every configured helper and
+        takes the FIRST answer, and windro has `credential.helper=store` globally
+        holding a plaintext token — measured answering first. Entry 0 must be an
+        empty unscoped value, which clears the list."""
+        body = self._fn_body(main_src)
+
+        assert "GIT_CONFIG_KEY_0: 'credential.helper'" in body
+        assert "GIT_CONFIG_VALUE_0: ''" in body
+        assert "GIT_CONFIG_COUNT: '2'" in body
 
     def test_it_returns_nothing_when_not_connected(self, main_src):
         """No account connected must leave behaviour exactly as before, not
@@ -69,12 +81,20 @@ class TestAgentGetsTheConnectedAccount:
 
     def test_the_token_is_never_written_to_a_config_file(self, main_src):
         """The whole point of GIT_CONFIG_* over `git config` is that nothing
-        persists: not global config, not .git/config, not `git remote -v`."""
-        body = self._fn_body(main_src)
+        persists: not global config, not .git/config, not `git remote -v`.
 
-        for forbidden in ("git config", "writeFileSync", "credential.helper=store"):
-            assert forbidden not in body, (
-                f"githubAgentEnv must not persist anything ({forbidden!r} found)"
+        Checks CODE, not prose — an earlier version of this grepped for bare
+        substrings and failed on its own explanatory comment.
+        """
+        body = self._fn_body(main_src)
+        code = "\n".join(
+            line for line in body.splitlines() if not line.strip().startswith(("//", "*", "/*"))
+        )
+
+        for forbidden in ("writeFileSync", "execFile", "spawn", "execSync"):
+            assert forbidden not in code, (
+                f"githubAgentEnv must only build an env dict — {forbidden!r} found, "
+                "which means it is doing something persistent or side-effecting"
             )
 
     def test_env_is_spread_after_the_base_environment(self, main_src):
@@ -105,7 +125,9 @@ class TestCredentialHelperActuallyWorks:
 
     HELPER = '!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
 
-    def _fill(self, host: str, env_extra: dict[str, str], tmp_path: Path) -> str:
+    def _fill(
+        self, host: str, env_extra: dict[str, str], tmp_path: Path, ignore_local: bool = True
+    ) -> str:
         subprocess.run(["git", "init", "-q", "."], cwd=tmp_path, capture_output=True, check=False)
         env = {
             "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -130,6 +152,40 @@ class TestCredentialHelperActuallyWorks:
         out = self._fill("github.com", {}, tmp_path)
 
         assert "password=" not in out, "something else is answering; probe is not isolated"
+
+    def test_the_reset_beats_a_competing_helper(self, tmp_path):
+        """The regression that shipped once: a global helper answering first.
+
+        Configures a LOCAL helper returning a different secret, then checks the
+        injected env still wins. Without the entry-0 reset, the local helper's
+        value comes back instead.
+        """
+        subprocess.run(["git", "init", "-q", "."], cwd=tmp_path, capture_output=True, check=False)
+        subprocess.run(
+            ["git", "config", "credential.helper",
+             "!f() { echo username=other; echo password=OTHER-HELPER-WINS; }; f"],
+            cwd=tmp_path, capture_output=True, check=False,
+        )
+
+        out = self._fill(
+            "github.com",
+            {
+                "GITHUB_TOKEN": "connected-account-token",
+                "GIT_CONFIG_COUNT": "2",
+                "GIT_CONFIG_KEY_0": "credential.helper",
+                "GIT_CONFIG_VALUE_0": "",
+                "GIT_CONFIG_KEY_1": "credential.https://github.com.helper",
+                "GIT_CONFIG_VALUE_1": self.HELPER,
+            },
+            tmp_path,
+            ignore_local=False,
+        )
+
+        assert "OTHER-HELPER-WINS" not in out, (
+            "a competing credential helper answered first — the connected account "
+            "is not actually being used for git push"
+        )
+        assert "password=connected-account-token" in out
 
     def test_credentials_supplied_with_the_env(self, tmp_path):
         out = self._fill(

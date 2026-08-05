@@ -1,5 +1,10 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
+import { BoundedMap, boundRecord } from '@/lib/bounded-map'
+
+// Dismissed rows per tool call; bounded for the same reason as the diff caches.
+const MAX_DISMISSED_ROWS = 300
+
 type DismissedToolRows = Record<string, true>
 
 // Tool rows the user has locally hidden via a row's dismiss control. This is a
@@ -15,7 +20,7 @@ type DismissedToolRows = Record<string, true>
 // than permanently rewriting history from a stray click.
 export const $dismissedToolRows = atom<DismissedToolRows>({})
 
-const dismissedCache = new Map<string, ReadableAtom<boolean>>()
+const dismissedCache = new BoundedMap<string, ReadableAtom<boolean>>(MAX_DISMISSED_ROWS)
 
 export function $toolRowDismissed(id: string): ReadableAtom<boolean> {
   let cached = dismissedCache.get(id)
@@ -33,7 +38,7 @@ export function dismissToolRow(id: string) {
     return
   }
 
-  $dismissedToolRows.set({ ...$dismissedToolRows.get(), [id]: true })
+  $dismissedToolRows.set(boundRecord({ ...$dismissedToolRows.get(), [id]: true }, MAX_DISMISSED_ROWS))
 }
 
 export function clearDismissedToolRows() {

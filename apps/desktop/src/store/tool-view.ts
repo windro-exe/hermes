@@ -1,6 +1,11 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
+import { BoundedMap, boundRecord } from '@/lib/bounded-map'
 import { persistBoolean, storedBoolean } from '@/lib/storage'
+
+// Disclosure state per tool call; bounded so a long session does not retain one
+// entry (and one permanent computed atom) for every tool call ever rendered.
+const MAX_TOOL_DISCLOSURES = 300
 
 export type ToolViewMode = 'product' | 'technical'
 
@@ -14,7 +19,10 @@ export const $toolViewMode = atom<ToolViewMode>(
   storedBoolean(TOOL_VIEW_TECHNICAL_STORAGE_KEY, false) ? 'technical' : 'product'
 )
 export const $toolDisclosureStates = atom<ToolDisclosureStates>(loadToolDisclosureStates())
-const disclosureOpenCache = new Map<string, ReadableAtom<boolean | undefined>>()
+
+const disclosureOpenCache = new BoundedMap<string, ReadableAtom<boolean | undefined>>(
+  MAX_TOOL_DISCLOSURES
+)
 
 $toolViewMode.subscribe(mode => persistBoolean(TOOL_VIEW_TECHNICAL_STORAGE_KEY, mode === 'technical'))
 $toolDisclosureStates.subscribe(persistToolDisclosureStates)
@@ -87,5 +95,5 @@ export function setToolDisclosureOpen(id: string, open: boolean) {
     return
   }
 
-  $toolDisclosureStates.set({ ...current, [id]: open })
+  $toolDisclosureStates.set(boundRecord({ ...current, [id]: open }, MAX_TOOL_DISCLOSURES))
 }

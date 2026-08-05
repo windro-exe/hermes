@@ -1,7 +1,7 @@
 'use client'
 
 import type { SyntaxHighlighterProps } from '@assistant-ui/react-streamdown'
-import { type FC, useMemo } from 'react'
+import { type FC, memo, useMemo } from 'react'
 import ShikiHighlighter from 'react-shiki'
 
 import {
@@ -115,14 +115,32 @@ const PlainCode: FC<{ code: string }> = ({ code }) => {
   )
 }
 
-export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
+const SyntaxHighlighterInner: FC<HermesSyntaxHighlighterProps> = ({
   components: { Pre },
   language,
   code,
   defer = false
 }) => {
   const { t } = useI18n()
-  const trimmed = (code ?? '').replace(/^\n+/, '').trimEnd()
+
+  // Four full-string passes used to run in the render body on every parent
+  // render: the leading-newline replace + trimEnd here, then isLikelyProseCodeBlock,
+  // then sanitizeLanguageTag, then exceedsHighlightBudget's newline scan. A code
+  // block is re-rendered constantly while a reply streams, and none of these
+  // depend on anything but `code`/`language` — so they are memoized together.
+  const derived = useMemo(() => {
+    const text = (code ?? '').replace(/^\n+/, '').trimEnd()
+    const cleanLanguage = sanitizeLanguageTag(language || '')
+
+    return {
+      isProse: Boolean(text.trim()) && isLikelyProseCodeBlock(language, text),
+      label: cleanLanguage && cleanLanguage !== 'unknown' ? cleanLanguage : '',
+      overBudget: exceedsHighlightBudget(text),
+      trimmed: text
+    }
+  }, [code, language])
+
+  const { isProse, label, overBudget, trimmed } = derived
 
   // Streaming may hand us empty/incomplete fences — render nothing rather
   // than a transient empty card.
@@ -130,13 +148,11 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
     return null
   }
 
-  if (isLikelyProseCodeBlock(language, trimmed)) {
+  if (isProse) {
     return <div className="aui-prose-fence whitespace-pre-wrap wrap-anywhere text-foreground">{trimmed}</div>
   }
 
-  const cleanLanguage = sanitizeLanguageTag(language || '')
-  const label = cleanLanguage && cleanLanguage !== 'unknown' ? cleanLanguage : ''
-  const plain = defer || exceedsHighlightBudget(trimmed)
+  const plain = defer || overBudget
 
   return (
     <CodeCard data-streaming={defer ? 'true' : undefined}>
@@ -180,3 +196,21 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
     </CodeCard>
   )
 }
+
+/**
+ * Memoized so a streaming reply does not re-render every settled code block.
+ *
+ * The component was a bare `FC`, so any parent render re-ran it — and with the
+ * derived work above now memoized, re-rendering was the remaining cost. Props are
+ * primitives plus a `components` object; comparing the fields that matter avoids
+ * re-rendering on a fresh `components` literal, which is what a default
+ * `memo` would trip over.
+ */
+export const SyntaxHighlighter = memo(
+  SyntaxHighlighterInner,
+  (prev, next) =>
+    prev.code === next.code &&
+    prev.language === next.language &&
+    prev.defer === next.defer &&
+    prev.components.Pre === next.components.Pre
+)

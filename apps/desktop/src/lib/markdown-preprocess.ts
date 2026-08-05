@@ -477,7 +477,64 @@ function normalizeFenceBlocks(text: string): string {
   return out.join('\n')
 }
 
+// Bounded exact-match memo for `preprocessMarkdown`.
+//
+// The transform is six regex passes plus a fence split over the WHOLE message
+// text, and it was uncached: Streamdown calls it on every render of every
+// markdown part. During a turn the transcript re-renders far more often than a
+// token arrives (see the selector cascades in thread/list.tsx and the
+// per-bubble scans in user-message.tsx), so the same string was being
+// reprocessed repeatedly for no reason.
+//
+// Same input -> same output, so an exact cache is safe by construction. Mirrors
+// the shape already used by markdown-blocks.ts (bounded Map, insertion-order
+// eviction) rather than introducing a second caching style — one pattern is
+// easier to reason about as more of this pipeline gets memoized.
+//
+// What this does NOT fix, stated plainly: while text is actively GROWING every
+// flush is a new string, so it misses and the cost is still O(text) per flush —
+// quadratic across a long reply. Making that incremental means reusing the
+// settled prefix, which is unsafe here because fence normalisation is not
+// position-independent (an unterminated fence earlier changes how later text is
+// treated). That needs the same "verified byte-identical to a full run"
+// treatment markdown-blocks.ts got, with tests, before it can be trusted.
+const PREPROCESS_CACHE_MAX = 128
+const preprocessCache = new Map<string, string>()
+
+function cachedPreprocess(text: string, compute: () => string): string {
+  const hit = preprocessCache.get(text)
+
+  if (hit !== undefined) {
+    return hit
+  }
+
+  const result = compute()
+
+  // Insertion-order eviction: drop the oldest entry once over budget. Cheap and
+  // adequate — the working set is the handful of parts currently on screen.
+  if (preprocessCache.size >= PREPROCESS_CACHE_MAX) {
+    const oldest = preprocessCache.keys().next()
+
+    if (!oldest.done) {
+      preprocessCache.delete(oldest.value)
+    }
+  }
+
+  preprocessCache.set(text, result)
+
+  return result
+}
+
+/** Test seam: drop memoized results so cache state cannot leak between tests. */
+export function __resetPreprocessCache(): void {
+  preprocessCache.clear()
+}
+
 export function preprocessMarkdown(text: string): string {
+  return cachedPreprocess(text, () => preprocessMarkdownUncached(text))
+}
+
+function preprocessMarkdownUncached(text: string): string {
   const cleaned = text.replace(REASONING_BLOCK_RE, '').replace(PREVIEW_MARKER_RE, '')
   const scrubbed = scrubBacktickNoise(cleaned)
   const normalizedFences = normalizeFenceBlocks(scrubbed)

@@ -22,7 +22,7 @@ on:
       targets:
         description: 'electron-builder linux targets (space separated)'
         required: false
-        default: 'AppImage deb'
+        default: 'AppImage deb rpm pacman'
         type: string
 
 # Least privilege: this only reads the repo and uploads artifacts.
@@ -103,7 +103,7 @@ jobs:
             echo
             echo '| file | size |'
             echo '| --- | --- |'
-            for f in release/*.AppImage release/*.deb release/*.rpm; do
+            for f in release/*.AppImage release/*.deb release/*.rpm release/*.pacman; do
               [ -e "$f" ] || continue
               printf '| `%s` | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
             done
@@ -118,3 +118,4 @@ jobs:
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.rpm
+            apps/desktop/release/*.pacman

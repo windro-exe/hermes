@@ -483,10 +483,19 @@ def _read_session(db, session_id: str, head: int = 20, tail: int = 10, link_prof
     return json.dumps(response, ensure_ascii=False)
 
 
-def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_profile: str = None) -> str:
+def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_profile: str = None, all_projects: bool = False) -> str:
     """Return metadata for the most recent sessions (no LLM calls, no FTS5)."""
     try:
+        # Same scoping for the browse shape: `session_search()` with no arguments
+        # otherwise lists every project's titles and previews.
+        browse_root = (
+            None
+            if all_projects or link_profile or not current_session_id
+            else _project_root_for_session(db, current_session_id)
+        )
+
         sessions = db.list_sessions_rich(
+            cwd_prefix=browse_root,
             limit=limit + 5,
             exclude_sources=list(_HIDDEN_SESSION_SOURCES),
             order_by_last_active=True,
@@ -744,6 +753,7 @@ def _discover(
     sort: Optional[str],
     current_session_id: str = None,
     link_profile: str = None,
+    all_projects: bool = False,
 ) -> str:
     """Discovery shape: FTS5 + anchored window + bookends per hit. Single call."""
     role_list = role_filter if role_filter else ["user", "assistant"]
@@ -751,6 +761,29 @@ def _discover(
     title_result = _title_match_result(db, query, current_lineage_root)
 
     try:
+        # Scope to the CURRENT project unless explicitly asked not to.
+        #
+        # Without this, searching from one project returns another's transcripts —
+        # and discovery returns each hit's first 3 user+assistant messages, i.e.
+        # THE PROJECT BRIEF. windro asked "what are we building" in a fresh project
+        # and got a confident description of a different product, because the brief
+        # it found was another project's.
+        #
+        # Correctness, NOT a security boundary: agent/file_safety.py:194 is explicit
+        # that the terminal runs as the same OS user with shell access, so nothing
+        # at the tool layer is enforcement. This stops accidents, not intent.
+        #
+        # Fails OPEN: _sessions_in_project returns None when it cannot tell, and a
+        # project-less session (no cwd) has nothing to scope by. Both leave search
+        # unscoped rather than silently useless.
+        scope_ids = None
+
+        if not all_projects and current_session_id and not link_profile:
+            scope_root = _project_root_for_session(db, current_session_id)
+
+            if scope_root:
+                scope_ids = _sessions_in_project(db, scope_root)
+
         raw_results = db.search_messages(
             query=query,
             role_filter=role_list,
@@ -761,6 +794,12 @@ def _discover(
             offset=0,
             sort=sort,
         )
+
+        if scope_ids is not None:
+            raw_results = [
+                r for r in (raw_results or [])
+                if str(r.get("session_id") or r.get("sid") or "") in scope_ids
+            ]
     except Exception as e:
         logging.error("FTS5 search failed: %s", e, exc_info=True)
         return tool_error(f"Search failed: {e}", success=False)
@@ -907,6 +946,8 @@ def session_search(
     sort: str = None,
     # Cross-profile (any shape)
     profile: str = None,
+    # Scoping
+    all_projects: bool = False,
 ) -> str:
     """Single-shape tool. Mode inferred from which args are set.
 
@@ -993,7 +1034,7 @@ def session_search(
 
     # Browse shape: no query → recent sessions.
     if not query or not isinstance(query, str) or not query.strip():
-        return _list_recent_sessions(db, limit, current_session_id, link_profile=profile)
+        return _list_recent_sessions(db, limit, current_session_id, link_profile=profile, all_projects=all_projects)
 
     # Parse role_filter
     role_list: Optional[List[str]] = None
@@ -1015,6 +1056,7 @@ def session_search(
         sort=sort_norm,
         current_session_id=current_session_id,
         link_profile=profile,
+        all_projects=all_projects,
     )
 
 

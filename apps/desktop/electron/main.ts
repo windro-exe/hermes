@@ -7890,6 +7890,9 @@ async function spawnPoolBackend(profile, entry) {
         // the child process. Inherited TERMINAL_CWD (or a stale config bridge)
         // can still point at the install dir even when spawn cwd is home.
         TERMINAL_CWD: hermesCwd,
+        // Connected GitHub account -> the agent's only GitHub credential.
+        // Spread AFTER the base env so a stale inherited GITHUB_TOKEN cannot win.
+        ...githubAgentEnv(),
         HERMES_DASHBOARD_SESSION_TOKEN: token,
         // Marks this dashboard backend as desktop-spawned so it runs the cron
         // scheduler tick loop (the gateway isn't running under the app).
@@ -8172,6 +8175,9 @@ async function startHermes() {
           HERMES_HOME,
           ...backend.env,
           TERMINAL_CWD: hermesCwd,
+        // Connected GitHub account -> the agent's only GitHub credential.
+        // Spread AFTER the base env so a stale inherited GITHUB_TOKEN cannot win.
+        ...githubAgentEnv(),
           HERMES_DASHBOARD_SESSION_TOKEN: token,
           // Marks this dashboard backend as desktop-spawned so it runs the cron
           // scheduler tick loop (the gateway isn't running under the app).
@@ -10716,6 +10722,57 @@ function _readGithubToken(): null | string {
     return decryptDesktopSecret(raw?.token) || null
   } catch {
     return null
+  }
+}
+
+/**
+ * Environment that makes the CONNECTED GitHub account the agent's only GitHub
+ * credential.
+ *
+ * The connection shipped renderer-only: the token lived here for the project
+ * dialog and nothing on the Python side could see it. So when the agent was
+ * asked to push, it fell through its own chain (tools/skills_hub.py:
+ * GITHUB_TOKEN -> `gh auth token` -> App JWT -> unauthenticated) and went
+ * hunting for the gh CLI. This closes that.
+ *
+ * Two things, both needed:
+ *
+ * 1. `GITHUB_TOKEN` — satisfies rung 1 of that existing chain, so every
+ *    API-based tool authenticates as the connected account with no new tool code.
+ *
+ * 2. A git credential helper passed via `GIT_CONFIG_*` env vars rather than any
+ *    config file. Plain `git push` would otherwise consult the Windows
+ *    credential manager and ignore the connected account entirely. Doing it
+ *    through the environment means no global or system git config is modified,
+ *    nothing is written into the repo's .git/config (so the token never reaches
+ *    disk or `git remote -v`), and it applies only to this process tree.
+ *    Scoped to `https://github.com`, so credentials for other hosts are
+ *    untouched. The helper reads $GITHUB_TOKEN at call time, so it stays correct
+ *    after a re-login without needing a respawn.
+ *
+ * Returns `{}` when no account is connected, leaving behaviour exactly as it was
+ * — this must not invent auth where the user has none.
+ *
+ * Trade-off worth stating plainly: the token becomes readable by anything the
+ * agent spawns, which is wider than "main process only". That is the cost of the
+ * requirement that the connected account works for EVERY GitHub operation, not
+ * just the ones the dialog implements.
+ */
+function githubAgentEnv(): Record<string, string> {
+  const token = _readGithubToken()
+
+  if (!token) {
+    return {}
+  }
+
+  // `x-access-token` is GitHub's documented username for token auth over HTTPS.
+  const helper = '!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
+
+  return {
+    GITHUB_TOKEN: token,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'credential.https://github.com.helper',
+    GIT_CONFIG_VALUE_0: helper
   }
 }
 

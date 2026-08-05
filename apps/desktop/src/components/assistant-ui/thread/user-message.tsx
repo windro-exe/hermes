@@ -14,6 +14,56 @@ import { cn } from '@/lib/utils'
 import { notifyThreadEditOpen } from '@/store/thread-scroll'
 import { isWatchWindow } from '@/store/windows'
 
+/**
+ * User-message ordinals and the id of the newest user message, computed once per
+ * messages array and shared by every mounted bubble.
+ *
+ * Each bubble previously ran its own full-array selector, making the cost
+ * O(bubbles x messages) per assistant-ui notification. Keyed on the array object
+ * in a WeakMap: recomputed exactly when the array identity changes, and holds no
+ * strong reference so a replaced transcript is collectable.
+ */
+const userIndexCache = new WeakMap<
+  readonly unknown[],
+  { latestUserId: null | string; ordinals: Map<string, number> }
+>()
+
+function userMessageIndex(messages: readonly unknown[]): {
+  latestUserId: null | string
+  ordinals: Map<string, number>
+} {
+  const cached = userIndexCache.get(messages)
+
+  if (cached) {
+    return cached
+  }
+
+  const ordinals = new Map<string, number>()
+  let latestUserId: null | string = null
+  let ordinal = 0
+
+  for (const entry of messages) {
+    const message = entry as { id?: string; role?: string }
+
+    if (message.role !== 'user') {
+      continue
+    }
+
+    if (message.id) {
+      ordinals.set(message.id, ordinal)
+      latestUserId = message.id
+    }
+
+    ordinal += 1
+  }
+
+  const result = { latestUserId, ordinals }
+  userIndexCache.set(messages, result)
+
+  return result
+}
+
+
 export function StickyHumanMessageContainer({
   attachments,
   children,
@@ -108,34 +158,20 @@ export const UserMessage: FC<{
   const messageText = messageContentText(content)
   const threadRunning = useAuiState(s => s.thread.isRunning)
 
-  const latestUserId = useAuiState(s => {
-    for (let i = s.thread.messages.length - 1; i >= 0; i--) {
-      const message = s.thread.messages[i] as { id?: string; role?: string }
-
-      if (message.role === 'user') {
-        return message.id ?? null
-      }
-    }
-
-    return null
-  })
+  // Both of these used to walk the whole message array inside the selector, once
+  // per mounted user bubble, on every assistant-ui notification — so a thread with
+  // U user bubbles and N messages did O(U x N) work per notification, and
+  // notifications arrive throughout a streaming turn.
+  //
+  // The walk is now done once per messages array and shared by every bubble via
+  // userMessageIndex (WeakMap-keyed on the array, so it is recomputed exactly when
+  // the array identity changes and never pins a stale one). Same values, one pass.
+  const latestUserId = useAuiState(s => userMessageIndex(s.thread.messages).latestUserId)
 
   const runtimeUserOrdinal = useAuiState(s => {
-    let ordinal = 0
+    const ordinal = userMessageIndex(s.thread.messages).ordinals.get(s.message.id)
 
-    for (const message of s.thread.messages) {
-      if (message.role !== 'user') {
-        continue
-      }
-
-      if (message.id === s.message.id) {
-        return ordinal
-      }
-
-      ordinal += 1
-    }
-
-    return null
+    return ordinal ?? null
   })
 
   const attachmentRefs = useAuiState(s => {

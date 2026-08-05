@@ -19,10 +19,10 @@ import { revealFileInTree } from '@/store/layout'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $projectTree, projectNameForCwd } from '@/store/projects'
 import {
+  $activeSessionCwd,
   $activeSessionId,
   $busy,
   $connection,
-  $currentCwd,
   $currentUsage,
   $selectedStoredSessionId,
   $sessions,
@@ -93,7 +93,10 @@ export function useStatusbarItems({
   const activeGatewayProfile = useStore($activeGatewayProfile)
   const terminalTakeover = useStore($terminalTakeover)
   const primaryBusy = useStore($busy)
-  const currentCwd = useStore($currentCwd)
+  // Follow the focused session, not the last-entered project (see
+  // $activeSessionCwd). A label naming a folder the session is not using is
+  // worse than no label.
+  const currentCwd = useStore($activeSessionCwd)
   // Derive the workspace's project name from the already-cached project tree
   // (backend truth via projects.*), so the status item labels by project without
   // a second per-session copy of the same fact. Re-derives whenever the cwd or

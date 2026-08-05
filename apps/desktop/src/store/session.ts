@@ -355,6 +355,49 @@ export const $currentFastMode = atom(storedBoolean(COMPOSER_FAST_KEY, false))
 // reflection of the truth the gateway reports rather than its own store.
 export const $yoloActive = atom(false)
 export const $currentCwd = atom(getRememberedWorkspaceCwd())
+
+/**
+ * The working directory of the session you are actually looking at.
+ *
+ * `$currentCwd` is a PERSISTED GLOBAL, written only when you enter a project or
+ * change the cwd explicitly. Nothing writes it back from the active session, so
+ * it keeps whichever folder you last entered — forever, across restarts.
+ *
+ * That is not cosmetic. windro opened a session in `Documents\tset` and the Files
+ * panel, the status bar AND the agent's file tools all operated on
+ * `Documents\Asthra HR admin`, the project he had entered earlier. The agent then
+ * read that project's package.json and confidently described the wrong product.
+ * The bar claiming a folder the session was not using is what made it so hard to
+ * diagnose.
+ *
+ * So: prefer the ACTIVE session's own cwd, and fall back to the remembered global
+ * only when no session is focused (a fresh window, before anything is selected).
+ *
+ * Deliberately NOT a "no folder" state: a plain non-project session genuinely runs
+ * in the home directory — its terminal and file browser really are there — so the
+ * honest answer is that path, not a placeholder. windro was explicit about this.
+ *
+ * Reads the session ROW (`SessionInfo.cwd`), which the gateway keeps in step, so
+ * this needs no new plumbing. Rows with no cwd fall through to the global rather
+ * than blanking the panel.
+ */
+export const $activeSessionCwd = computed(
+  [$activeSessionId, $selectedStoredSessionId, $sessions, $currentCwd],
+  (activeId, selectedId, sessions, rememberedCwd) => {
+    const focusedId = activeId || selectedId
+
+    if (focusedId) {
+      const row = sessions.find(s => s.id === focusedId)
+      const rowCwd = (row?.cwd || '').trim()
+
+      if (rowCwd) {
+        return rowCwd
+      }
+    }
+
+    return rememberedCwd.trim()
+  }
+)
 export const $newChatWorkspaceTarget = atom<NewChatWorkspaceTarget>(undefined)
 export const $newChatWorkspaceTargetGeneration = atom(0)
 export const $currentBranch = atom('')

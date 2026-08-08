@@ -43,11 +43,17 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-# FORK: install from windro's fork, not NousResearch. The clone's `origin` is
-# what self-update fetches from, so this is what makes a fork install track the
-# fork. Keep in step with scripts/install.ps1 ($RepoSlug) and the raw URL in
+# FORK: install from windro's own repo, not NousResearch. The clone's `origin` is
+# what self-update fetches from, so this is what makes an install track this repo.
+#
+# Was windro-xdd/hermes-agent until 2026-08-08. That is a DIFFERENT repo which
+# still exists and is frozen at 9e118284c, so the old value was not a dead link --
+# installs succeeded and then silently tracked a stale repo on an abandoned
+# account. Do not "restore" the old slug.
+#
+# Keep in step with scripts/install.ps1 ($RepoSlug) and the raw URL in
 # apps/desktop/electron/bootstrap-runner.ts.
-REPO_SLUG="windro-xdd/hermes-agent"
+REPO_SLUG="windro-exe/hermes"
 REPO_URL_SSH="git@github.com:${REPO_SLUG}.git"
 REPO_URL_HTTPS="https://github.com/${REPO_SLUG}.git"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"

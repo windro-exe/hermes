@@ -233,14 +233,19 @@ function downloadInstallScript(ref, destPath) {
   // ref so local builds can still bootstrap without pretending the all-zero
   // placeholder is a real GitHub commit.
   const scriptName = installScriptName()
-  // FORK: fetch the install script from windro's fork, not NousResearch.
+  // FORK: fetch the install script from windro's own repo, not NousResearch.
   //
-  // `ref` is the commit this app was built from (install-stamp.json). For a fork
-  // build that commit only exists in the fork, so asking NousResearch for it is a
-  // guaranteed 404 and the first-launch bootstrap dies before it starts. This
-  // must stay in step with the repo `scripts/install.ps1` clones, since that is
-  // what becomes `origin` and therefore what self-update follows.
-  const url = `https://raw.githubusercontent.com/windro-xdd/hermes-agent/${ref}/scripts/${scriptName}`
+  // `ref` is the commit this app was built from (install-stamp.json). That commit
+  // only exists in this repo, so asking NousResearch for it is a guaranteed 404
+  // and the first-launch bootstrap dies before it starts. This must stay in step
+  // with the repo `scripts/install.ps1` clones, since that is what becomes
+  // `origin` and therefore what self-update follows.
+  //
+  // Was windro-xdd/hermes-agent until 2026-08-08. That slug is a DIFFERENT repo
+  // frozen at 9e118284c, and raw.githubusercontent.com does NOT follow across
+  // repos -- a build stamped with any newer commit 404s here. Verified:
+  // raw/windro-xdd/hermes-agent/b7ad171d0/scripts/install.ps1 -> HTTP 404.
+  const url = `https://raw.githubusercontent.com/windro-exe/hermes/${ref}/scripts/${scriptName}`
 
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(destPath), { recursive: true })

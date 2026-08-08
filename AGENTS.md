@@ -7,9 +7,12 @@ You are in **windro's fork**, not the original NousResearch repo. Everything bel
 this block is upstream's guide and still applies to how the code works. This block
 overrides it on anything about git, pushing, merging, or what is safe to run.
 
-**Remotes.** `origin` is `windro-xdd/hermes-agent` — his repo, the only place you
-push. `upstream` is `NousResearch/hermes-agent` — fetch only. Never push to upstream,
-never open a PR against it.
+**Remotes.** `origin` is `windro-exe/hermes` — his repo, the only place you push.
+(It was `windro-xdd/hermes-agent`; the repo was renamed and moved to a new account on
+2026-08-08. GitHub still redirects the old path, so a wrong push may appear to work —
+do not rely on that.) `upstream` would be `NousResearch/hermes-agent`, fetch only, but
+it is **not configured in this checkout** — run `git remote -v` before any command that
+assumes it exists. Never push to upstream, never open a PR against it.
 
 **Never sync upstream on your own.** No automatic merge, no scheduled job, no
 "while I'm here I'll catch us up." Upstream updates happen only when windro says so:
@@ -29,9 +32,12 @@ he waits, the more a future merge costs, and he accepted that.
 change, run the tests, report what passed and what failed, then **wait for windro to
 approve**. He merges, or tells you to. Do not merge on your own initiative.
 
-**This directory is his live install.** The repo and the running app are the same
-folder. Code you edit is the app he uses daily. Renderer or Electron changes need a
-rebuild before they take effect:
+**Check whether this checkout is his live install — do not assume it.** Some checkouts
+are: repo and running app in the same folder, so code you edit is the app he uses daily.
+Others are not. `C:\wnx-projects\personal\hermes` (cloned 2026-08-08) has no venv and no
+`AppData\Local\hermes`, so nothing here is running. Decide by looking, not by trusting
+this line. Where it IS the live install, renderer or Electron changes need a rebuild
+before they take effect:
 `venv/Scripts/python.exe -m hermes_cli.main desktop --build-only --force-build`.
 
 **His data is outside the repo** in `AppData\Local\hermes\` — sessions, profiles,
@@ -66,8 +72,10 @@ entries relevant to what you are working on. Re-read them when you come back. Do
 rely on rediscovering them — context gets dropped, and an agent that has forgotten
 these rules is exactly the agent that pushes to the wrong remote.
 
-**Current work:** UI latency fixes on branch `perf/ui-latency`. Upstream's own
-`apps/desktop/scripts/profile-typing-lag.md` is stale — the incremental markdown
+**Current work:** nothing in flight. The UI latency work is finished — merged to `main`
+in `8b819e69e` and the branch deleted, so do not go looking for `perf/ui-latency`. See
+`fork/changelog/entries/2026-08-04-09-ui-perf-four-fixes.md`. Upstream's own
+`apps/desktop/scripts/profile-typing-lag.md` is still stale — the incremental markdown
 lexing it calls unfixed landed in commit `bd4953b30`. Verify before trusting docs.
 
 <!-- ===== FORK-RULES: END ===== -->

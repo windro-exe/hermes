@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-08 | Docs | [FORK-RULES named a remote the fork no longer pushes to](entries/2026-08-08-01-fork-rules-remote-correction.md) | current |
 | 2026-08-04 | Performance | [Four measured UI performance fixes, and three left alone on purpose](entries/2026-08-04-09-ui-perf-four-fixes.md) | current |
 | 2026-08-04 | Fixed | [Connected GitHub account is the agent's credential](entries/2026-08-04-07-github-agent-auth.md) | current |
 | 2026-08-04 | Fixed | [One session under two lanes: the real cause](entries/2026-08-04-08-branch-lane-id-real-cause.md) | current |

@@ -136,18 +136,23 @@ foreach ($tmpVar in @('TEMP', 'TMP')) {
 # Configuration
 # ============================================================================
 
-# FORK: install from windro's fork, not NousResearch.
+# FORK: install from windro's own repo, not NousResearch.
 #
 # This is the single decision that makes the fork self-updating. install.ps1
 # clones $RepoUrlHttps into the managed checkout, and that clone's `origin` is
 # what the desktop's self-update fetches from (see apps/desktop/electron/main.ts
-# checkUpdates -> `git fetch origin <branch>`). Point it here and pushing to the
-# fork is all it takes for an installed app to see an update; point it back at
-# NousResearch and installs silently track upstream instead.
+# checkUpdates -> `git fetch origin <branch>`). Point it here and pushing to
+# this repo is all it takes for an installed app to see an update; point it back
+# at NousResearch and installs silently track upstream instead.
+#
+# Was windro-xdd/hermes-agent until 2026-08-08. That is a DIFFERENT repo which
+# still exists and is frozen at 9e118284c, so pointing here was not a dead link
+# -- installs succeeded and then silently tracked a stale repo on an abandoned
+# account. Do not "restore" the old slug.
 #
 # Keep in step with $RepoSlug below, scripts/install.sh, and the raw URL in
 # apps/desktop/electron/bootstrap-runner.ts.
-$RepoSlug = "windro-xdd/hermes-agent"
+$RepoSlug = "windro-exe/hermes"
 $RepoUrlSsh = "git@github.com:$RepoSlug.git"
 $RepoUrlHttps = "https://github.com/$RepoSlug.git"
 $PythonVersion = "3.11"

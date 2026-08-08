@@ -8,11 +8,20 @@ this block is upstream's guide and still applies to how the code works. This blo
 overrides it on anything about git, pushing, merging, or what is safe to run.
 
 **Remotes.** `origin` is `windro-exe/hermes` — his repo, the only place you push.
-(It was `windro-xdd/hermes-agent`; the repo was renamed and moved to a new account on
-2026-08-08. GitHub still redirects the old path, so a wrong push may appear to work —
-do not rely on that.) `upstream` would be `NousResearch/hermes-agent`, fetch only, but
-it is **not configured in this checkout** — run `git remote -v` before any command that
-assumes it exists. Never push to upstream, never open a PR against it.
+
+`windro-xdd/hermes-agent` is **a different repo, not an old name for this one.** It is
+still live on an abandoned account, is a real GitHub fork of `NousResearch/hermes-agent`,
+and is frozen at `9e118284c`. Nothing redirects between the two: `git ls-remote` on the
+old slug answers `9e118284c` while this repo is far ahead, and
+`raw.githubusercontent.com` on the old slug 404s for any newer commit. So a command
+aimed at the old slug does not fail loudly — it quietly talks to a stale repo. Never
+point anything there.
+
+Note this repo is NOT a GitHub fork (`parent` is null); it was created standalone and
+pushed into, which is why there is no upstream link in the GitHub UI. `upstream` would
+be `NousResearch/hermes-agent`, fetch only, but it is **not configured in this
+checkout** — run `git remote -v` before any command that assumes it exists. Never push
+to upstream, never open a PR against it.
 
 **Never sync upstream on your own.** No automatic merge, no scheduled job, no
 "while I'm here I'll catch us up." Upstream updates happen only when windro says so:

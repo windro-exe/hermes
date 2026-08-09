@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-09 | Fixed | [`hermes update` could replace the whole fork with upstream's code](entries/2026-08-09-02-disconnect-upstream.md) | current |
 | 2026-08-09 | Added | [Kiro (Amazon Q) as a provider, without adding a transport to core](entries/2026-08-09-01-kiro-provider.md) | current |
 | 2026-08-08 | Fixed | [The installer and first-launch bootstrap pointed at a different, stale repo](entries/2026-08-08-02-installer-fork-slug.md) | current |
 | 2026-08-08 | Docs | [FORK-RULES named a remote the fork no longer pushes to](entries/2026-08-08-01-fork-rules-remote-correction.md) | corrected by 2026-08-08-02 |

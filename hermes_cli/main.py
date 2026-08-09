@@ -7639,14 +7639,22 @@ def _update_via_zip(args):
             f"--branch {branch}`, or update against main with `hermes update`."
         )
         sys.exit(1)
-    zip_url = (
-        f"https://github.com/NousResearch/hermes-agent/archive/refs/heads/{branch}.zip"
-    )
+    # FORK: the archive MUST come from this fork.
+    #
+    # This line previously read NousResearch/hermes-agent. Because this path runs
+    # exactly when git I/O is blocked -- which is common on Windows while the
+    # desktop app holds .pyd files open -- it silently downloaded UPSTREAM's
+    # source and extracted it over the fork, leaving a working tree of upstream
+    # code while .git still claimed a fork commit. It corrupted a live install
+    # that way on 2026-08-09. See fork/changelog/entries/2026-08-09-02-*.
+    from hermes_fork import FORK_NAME, fork_archive_url
+
+    zip_url = fork_archive_url(branch)
 
     print("→ Downloading latest version...")
     tmp_dir = tempfile.mkdtemp(prefix="hermes-update-")
     try:
-        zip_path = os.path.join(tmp_dir, f"hermes-agent-{branch}.zip")
+        zip_path = os.path.join(tmp_dir, f"{FORK_NAME}-{branch}.zip")
         urlretrieve(zip_url, zip_path)
 
         print("→ Extracting...")
@@ -7676,8 +7684,11 @@ def _update_via_zip(args):
                     )
             zf.extractall(tmp_dir)
 
-        # GitHub ZIPs extract to hermes-agent-<branch>/
-        extracted = os.path.join(tmp_dir, f"hermes-agent-{branch}")
+        # GitHub ZIPs extract to <repo-name>-<branch>/. This is derived from the
+        # fork's repo name rather than hardcoded: it read "hermes-agent-" while
+        # the fork is named "hermes", so it only worked by falling through to the
+        # guess loop below.
+        extracted = os.path.join(tmp_dir, f"{FORK_NAME}-{branch}")
         if not os.path.isdir(extracted):
             # Try to find it
             for d in os.listdir(tmp_dir):
@@ -8253,13 +8264,14 @@ def _discard_stashed_changes(
 # Fork detection and upstream management for `hermes update`
 # =========================================================================
 
-OFFICIAL_REPO_URLS = {
-    "https://github.com/NousResearch/hermes-agent.git",
-    "git@github.com:NousResearch/hermes-agent.git",
-    "https://github.com/NousResearch/hermes-agent",
-    "git@github.com:NousResearch/hermes-agent",
-}
-OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
+# FORK: sourced from hermes_fork so the slug is not duplicated again. These are
+# retained only to RECOGNISE an install pointed at upstream; nothing fetches from
+# them (see _sync_with_upstream_if_needed, which is a no-op).
+from hermes_fork import UPSTREAM_SLUG as _UPSTREAM_SLUG  # noqa: E402
+from hermes_fork import UPSTREAM_URLS as _UPSTREAM_URLS  # noqa: E402
+
+OFFICIAL_REPO_URLS = set(_UPSTREAM_URLS)
+OFFICIAL_REPO_URL = f"https://github.com/{_UPSTREAM_SLUG}.git"
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
 
 
@@ -8377,12 +8389,22 @@ def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
 def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
     """Check if fork is behind upstream and sync if safe.
 
-    This implements the fork upstream sync logic:
-    - If upstream remote doesn't exist, ask user if they want to add it
-    - Compare origin/main with upstream/main
-    - If origin/main is strictly behind upstream/main, pull from upstream
-    - Try to sync fork back to origin if possible
+    FORK: disabled. This is a hard no-op.
+
+    Upstream's logic here offers to add an ``upstream`` remote and, if the fork
+    is strictly behind, fast-forwards onto it. Sensible for a fork that intends
+    to contribute back; wrong for this one. AGENTS.md records the standing
+    decision (2026-07-29) to ignore upstream unless something big lands, and
+    states that an automated sync previously existed and was removed on purpose.
+    Leaving this function live re-created that sync in all but name, and it
+    prompted with ``[Y/n]`` -- defaulting to yes.
+
+    The body is kept below the return rather than deleted so the upstream diff
+    stays legible: this is a one-line divergence, not a rewrite. If the fork ever
+    wants upstream tracking again, delete the return.
     """
+    return
+
     has_upstream = _has_upstream_remote(git_cmd, cwd)
 
     if not has_upstream:

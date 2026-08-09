@@ -323,8 +323,19 @@ fn upgrade_cached_script(kind: ScriptKind, cached: &Path, emit_log: &impl Fn(&st
 /// packets) never errors — the whole bootstrap would hang here instead of
 /// falling back to the cached script.
 async fn download(kind: ScriptKind, commit_or_ref: &str, dest_path: &Path) -> Result<()> {
+    // FORK: fetch the install script from this fork, not upstream.
+    //
+    // `commit_or_ref` is a ref from a fork build, so it only exists in the fork.
+    // raw.githubusercontent.com does NOT follow repository renames or transfers,
+    // so asking upstream for a fork commit is a hard 404 -- and asking for a
+    // mutable ref like `main` is worse: it silently returns UPSTREAM's installer,
+    // which then clones upstream over the user's fork install. The same mistake
+    // in the desktop's bootstrap-runner.ts is documented in
+    // fork/changelog/entries/2026-08-08-02-installer-fork-slug.md.
+    //
+    // Rust cannot import hermes_fork.py; keep this in step with FORK_SLUG there.
     let url = format!(
-        "https://raw.githubusercontent.com/NousResearch/hermes-agent/{}/scripts/{}",
+        "https://raw.githubusercontent.com/windro-exe/hermes/{}/scripts/{}",
         commit_or_ref,
         kind.filename()
     );

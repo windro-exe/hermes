@@ -1845,7 +1845,12 @@ class TestOptionalSkillSourceMetadata:
         meta = src.inspect("official/finance/3-statement-model")
 
         assert meta is not None
-        assert meta.repo == "NousResearch/hermes-agent"
+        # FORK: optional-skills/ ships in THIS repo, so the metadata must name it.
+        # Imported rather than written out so it cannot drift from hermes_fork.py.
+        from hermes_fork import FORK_SLUG
+
+        assert meta.repo == FORK_SLUG
+        assert "nousresearch" not in meta.repo.lower()
         assert meta.path == "optional-skills/finance/3-statement-model"
 
     def test_scan_all_accepts_install_prefix_but_rejects_nested_support_skills(self, tmp_path):
@@ -2522,12 +2527,43 @@ class TestLoadHermesIndex:
 
     @staticmethod
     def _isolate_cache(monkeypatch, tmp_path):
-        """Point the on-disk cache at an empty tmp dir so no real cache leaks in."""
+        """Point the on-disk cache at an empty tmp dir so no real cache leaks in.
+
+        FORK: also forces ``_FORK_PUBLISHES_SKILLS_INDEX`` on. This fork ships it
+        False -- the aggregated index is ~32 MB and is not committed, so the
+        fetch is skipped entirely rather than firing a guaranteed 404. These
+        tests cover the fetch mechanics (Brotli avoidance, DecodingError retry),
+        which are still live code and must stay covered for whenever the index is
+        published, so they opt in explicitly.
+        """
+        import tools.skills_hub as hub
+
+        monkeypatch.setattr(hub, "_FORK_PUBLISHES_SKILLS_INDEX", True)
+        cache_file = tmp_path / "hermes-index.json"
+        monkeypatch.setattr(hub, "_hermes_index_cache_file", lambda: cache_file)
+        return cache_file
+
+    def test_index_disabled_makes_no_request(self, monkeypatch, tmp_path):
+        """FORK: with the index unpublished, no network call is attempted."""
         import tools.skills_hub as hub
 
         cache_file = tmp_path / "hermes-index.json"
         monkeypatch.setattr(hub, "_hermes_index_cache_file", lambda: cache_file)
-        return cache_file
+        monkeypatch.setattr(hub, "_FORK_PUBLISHES_SKILLS_INDEX", False)
+
+        def explode(*args, **kwargs):
+            raise AssertionError("no HTTP request may be made while the index is unpublished")
+
+        monkeypatch.setattr(hub.httpx, "get", explode)
+
+        assert hub._load_hermes_index() is None
+
+    def test_index_url_points_at_the_fork(self):
+        """FORK: the URL must never reach upstream's docs site."""
+        import tools.skills_hub as hub
+
+        assert "nousresearch" not in hub.HERMES_INDEX_URL.lower()
+        assert "windro-exe/hermes" in hub.HERMES_INDEX_URL
 
     def test_fetch_does_not_request_brotli(self, monkeypatch, tmp_path):
         """The index fetch must not negotiate Brotli (the broken decoder path)."""

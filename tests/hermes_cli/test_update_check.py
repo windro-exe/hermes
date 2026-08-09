@@ -97,10 +97,17 @@ def test_check_for_updates_expired_cache(tmp_path, monkeypatch):
 
 
 def test_check_for_updates_official_ssh_origin_uses_https_probe(tmp_path):
-    """Passive update checks must not trigger SSH auth for official installs."""
-    import hermes_cli.banner as banner
+    """Passive update checks must not trigger SSH auth for our own installs.
 
-    repo_dir = tmp_path / "hermes-agent"
+    FORK: "official" here means this fork, not NousResearch. The substitution is
+    what stops a FIDO2/passkey-backed SSH key raising a hardware-touch prompt on
+    a background check, and pointed at upstream it never fired for a fork install
+    at all. URLs come from hermes_fork so they cannot drift from the source.
+    """
+    import hermes_cli.banner as banner
+    from hermes_fork import FORK_HTTPS_URL, FORK_SSH_URL
+
+    repo_dir = tmp_path / "hermes"
     repo_dir.mkdir()
     (repo_dir / ".git").mkdir()
 
@@ -109,13 +116,13 @@ def test_check_for_updates_official_ssh_origin_uses_https_probe(tmp_path):
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
         if cmd == ["git", "remote", "get-url", "origin"]:
-            return MagicMock(returncode=0, stdout="git@github.com:NousResearch/hermes-agent.git\n")
+            return MagicMock(returncode=0, stdout=f"{FORK_SSH_URL}\n")
         if cmd == ["git", "rev-parse", "HEAD"]:
             return MagicMock(returncode=0, stdout="local-sha\n")
         if cmd == [
             "git",
             "ls-remote",
-            "https://github.com/NousResearch/hermes-agent.git",
+            FORK_HTTPS_URL,
             "refs/heads/main",
         ]:
             return MagicMock(returncode=0, stdout="upstream-sha\trefs/heads/main\n")

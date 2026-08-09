@@ -174,17 +174,30 @@ class TestFetchFailure:
 
 class TestFallbackChain:
     """``_fetch_manifest_with_fallback`` walks ``DEFAULT_CATALOG_FALLBACK_URLS``
-    when the primary URL fails. Regression: the Docusaurus site behind Vercel
-    occasionally returns HTTP 403 + x-vercel-mitigated: challenge for urllib;
-    without a fallback URL the user's disk cache freezes and new model
-    releases (opus 4.8, etc.) never reach the picker.
+    when the primary URL fails.
+
+    FORK: the shipped chain is now empty. Upstream fetched its Docusaurus site
+    first and fell back to raw GitHub; this fork has no website, so raw GitHub is
+    the primary and there is nothing to fall back TO that isn't upstream. The
+    walk mechanism still exists and is still exercised here, with the chain
+    injected rather than taken from the shipped default -- otherwise removing the
+    default would silently delete coverage of the mechanism itself.
     """
 
-    PRIMARY = "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
-    FALLBACK = (
-        "https://raw.githubusercontent.com/NousResearch/hermes-agent"
+    PRIMARY = (
+        "https://raw.githubusercontent.com/windro-exe/hermes"
         "/main/website/static/api/model-catalog.json"
     )
+    #: Synthetic second source, used only to drive the fallback walk. Not shipped.
+    FALLBACK = "https://example.invalid/model-catalog.json"
+
+    def test_shipped_chain_has_no_upstream_host(self):
+        """Guard: the default chain must never reach back to upstream."""
+        from hermes_cli import model_catalog
+
+        assert model_catalog.DEFAULT_CATALOG_FALLBACK_URLS == ()
+        assert "nousresearch" not in model_catalog.DEFAULT_CATALOG_URL.lower()
+        assert "windro-exe/hermes" in model_catalog.DEFAULT_CATALOG_URL
 
     def test_uses_primary_when_it_succeeds(self, isolated_home):
         from hermes_cli import model_catalog
@@ -200,21 +213,41 @@ class TestFallbackChain:
         assert result is not None
         assert calls == [self.PRIMARY], "fallback URLs must not be touched on primary success"
 
-    def test_falls_through_to_raw_github_on_primary_failure(self, isolated_home):
+    def test_falls_through_to_secondary_on_primary_failure(self, isolated_home):
+        """The walk itself still works when a chain is configured."""
         from hermes_cli import model_catalog
         calls: list[str] = []
 
         def fake_fetch(url, timeout):
             calls.append(url)
             if url == self.PRIMARY:
-                return None  # simulate Vercel 403
+                return None  # simulate a primary that 403s or 404s
             return _valid_manifest()
+
+        # The chain is a DEFAULT ARGUMENT, bound at def time, so patching the
+        # module attribute has no effect -- pass it explicitly instead.
+        with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch):
+            result = model_catalog._fetch_manifest_with_fallback(
+                self.PRIMARY, 5.0, fallback_urls=(self.FALLBACK,)
+            )
+
+        assert result is not None
+        assert calls == [self.PRIMARY, self.FALLBACK]
+
+    def test_no_secondary_attempt_with_the_shipped_empty_chain(self, isolated_home):
+        """With the fork's default chain, a primary failure is the end of it."""
+        from hermes_cli import model_catalog
+        calls: list[str] = []
+
+        def fake_fetch(url, timeout):
+            calls.append(url)
+            return None
 
         with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch):
             result = model_catalog._fetch_manifest_with_fallback(self.PRIMARY, 5.0)
 
-        assert result is not None
-        assert calls == [self.PRIMARY, self.FALLBACK]
+        assert result is None
+        assert calls == [self.PRIMARY]
 
     def test_returns_none_when_all_urls_fail(self, isolated_home):
         from hermes_cli import model_catalog
@@ -227,33 +260,40 @@ class TestFallbackChain:
         assert fetch.call_count == 1 + len(model_catalog.DEFAULT_CATALOG_FALLBACK_URLS)
 
     def test_dedupes_when_primary_equals_fallback(self, isolated_home):
-        """Operator who configured ``model_catalog.url`` to the raw GitHub URL
-        should not get a duplicate fetch from the fallback list."""
+        """Operator who configured ``model_catalog.url`` to a URL already in the
+        chain should not get a duplicate fetch. Chain injected, since the fork
+        ships an empty one and the dedupe would be untestable otherwise."""
         from hermes_cli import model_catalog
 
         with patch.object(model_catalog, "_fetch_manifest", return_value=None) as fetch:
-            model_catalog._fetch_manifest_with_fallback(self.FALLBACK, 5.0)
+            model_catalog._fetch_manifest_with_fallback(
+                self.FALLBACK, 5.0, fallback_urls=(self.FALLBACK,)
+            )
 
         assert fetch.call_count == 1, f"expected 1 call, got {fetch.call_count}"
 
-    def test_get_catalog_uses_fallback_chain(self, isolated_home):
-        """End-to-end: ``get_catalog`` routes through the fallback helper so
-        a primary URL failure transparently produces a working catalog."""
+    def test_get_catalog_routes_through_the_fallback_helper(self, isolated_home):
+        """``get_catalog`` must delegate to the fallback helper, not fetch directly.
+
+        The chain's contents can't be injected here -- ``get_catalog`` calls the
+        helper without the argument, so it takes the def-time default. What
+        matters is the wiring: if this stopped going through the helper, a
+        configured chain would be bypassed entirely.
+        """
         from hermes_cli import model_catalog
         manifest = _valid_manifest()
-        calls: list[str] = []
 
-        def fake_fetch(url, timeout):
-            calls.append(url)
-            if url == self.PRIMARY:
-                return None
-            return manifest
-
-        with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch):
+        with patch.object(
+            model_catalog, "_fetch_manifest_with_fallback", return_value=manifest
+        ) as helper:
             result = model_catalog.get_catalog(force_refresh=True)
 
         assert result == manifest
-        assert self.FALLBACK in calls
+        assert helper.call_count == 1
+        # Called with the configured primary URL, which must be the fork's.
+        primary = helper.call_args[0][0]
+        assert "windro-exe/hermes" in primary
+        assert "nousresearch" not in primary.lower()
 
 
 class TestCuratedAccessors:

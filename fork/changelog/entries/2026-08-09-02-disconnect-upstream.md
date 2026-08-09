@@ -94,6 +94,15 @@ for recognising** an install pointed at upstream. Imports nothing but
   hard 404 and a mutable ref like `main` silently returns *upstream's* installer,
   which then clones upstream over the user's install.
 
+**New guard suite, `tests/hermes_cli/test_fork_upstream_disconnect.py`** (20
+tests). This bug class has now recurred twice and failed silently both times, so
+the guard is the durable part of this change: it asserts every *fetched* URL names
+the fork, that `_update_via_zip` uses `fork_archive_url` and derives its extract
+directory from `FORK_NAME`, that `_sync_with_upstream_if_needed` makes no git call
+and raises no prompt, that upstream recognition still works for the informational
+banner, and that the three hand-duplicated slugs in TypeScript/Rust have not
+drifted. Added in a follow-up commit on the same branch after the first push.
+
 Tests updated where they encoded the old behaviour:
 `tests/hermes_cli/test_update_check.py`, `tests/hermes_cli/test_model_catalog.py`,
 `tests/tools/test_skills_hub.py`, `apps/desktop/electron/update-remote.test.ts`.

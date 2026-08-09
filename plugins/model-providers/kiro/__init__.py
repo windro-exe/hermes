@@ -99,6 +99,21 @@ class KiroProfile(ProviderProfile):
     def get_max_tokens(self, model: str) -> Optional[int]:
         return catalog.info_for(model).output
 
+    def supports_vision_for_model(self, model: str) -> Optional[bool]:
+        """Per-model vision capability.
+
+        The profile-wide ``supports_vision`` flag is too coarse here: Q accepts
+        images on the Claude ids and rejects them outright on every ``gpt-*`` id
+        with REQUEST_BODY_INVALID, so a single flag would either lose images on
+        Claude or 400 on GPT.
+
+        ``agent.image_routing._lookup_supports_vision`` calls this when models.dev
+        has no entry for the model, which is always true for Kiro's ids. Without
+        it the lookup returns None and image_mode falls back to "text" -- the
+        image never reaches the model and it reports it cannot see one.
+        """
+        return catalog.supports_vision(model)
+
 
 class KiroIdeProfile(KiroProfile):
     """Kiro using the credentials an installed Kiro IDE or CLI already holds.

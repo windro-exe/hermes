@@ -175,6 +175,71 @@ class TestUpstreamSyncIsDisabled:
         assert m._is_fork("https://github.com/NousResearch/hermes-agent.git") is False
 
 
+class TestPackaging:
+    """`hermes_fork` is a root-level single-file module, so it must be declared in
+    ``[tool.setuptools] py-modules`` or it is silently dropped from any
+    non-editable install.
+
+    This was shipped broken: `hermes_cli/main.py` imports `hermes_fork` at module
+    level, so omitting it breaks the entire CLI in a wheel, the Docker image, or a
+    uv2nix sealed venv -- while looking perfectly fine in the editable install
+    used for development. pyproject's own comment on that list says as much.
+    """
+
+    @staticmethod
+    def _repo_root() -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _declared_py_modules(self) -> set[str]:
+        import re
+
+        text = (self._repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r"^py-modules\s*=\s*\[(.*?)\]", text, re.M | re.S)
+        assert match, "py-modules list not found in pyproject.toml"
+        return set(re.findall(r'"([^"]+)"', match.group(1)))
+
+    def test_hermes_fork_is_declared(self):
+        assert "hermes_fork" in self._declared_py_modules()
+
+    def test_every_imported_root_module_is_declared(self):
+        """General form of the same bug, for whatever gets added next."""
+        import re
+        import subprocess
+
+        root = self._repo_root()
+        tracked = subprocess.run(
+            ["git", "ls-files", "*.py"], cwd=root, capture_output=True, text=True
+        ).stdout.split()
+        if not tracked:
+            pytest.skip("git not available or not a checkout")
+
+        root_modules = {Path(p).stem for p in tracked if "/" not in p}
+        pattern = re.compile(r"^\s*(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.M)
+        imported: set[str] = set()
+        for rel in tracked:
+            if "/" not in rel or rel.startswith("tests/"):
+                continue
+            try:
+                text = (root / rel).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            imported.update(name for name in pattern.findall(text) if name in root_modules)
+
+        undeclared = sorted(imported - self._declared_py_modules())
+        assert not undeclared, (
+            "root-level modules imported by source but missing from "
+            f"pyproject py-modules (they vanish in non-editable installs): {undeclared}"
+        )
+
+    def test_declared_modules_all_exist(self):
+        """Catches the reverse: a declared module that was deleted or renamed."""
+        root = self._repo_root()
+        missing = sorted(
+            name for name in self._declared_py_modules() if not (root / f"{name}.py").is_file()
+        )
+        assert not missing, f"py-modules names files that do not exist: {missing}"
+
+
 class TestDuplicatedSlugsStayInStep:
     """TypeScript and Rust cannot import hermes_fork.py, so three files carry
     the slug by hand. These assertions are the only thing keeping them honest."""

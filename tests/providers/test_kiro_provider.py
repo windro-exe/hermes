@@ -524,6 +524,63 @@ class TestHermesWiring:
 # --------------------------------------------------------------------------
 
 
+class TestVisionRouting:
+    """Images must actually reach the model.
+
+    Hermes resolves vision capability from config, then models.dev. Kiro's model
+    ids are not in models.dev, so the answer was "unknown", image_mode fell back
+    to "text", and the image never reached the model -- Opus 5 replied that it
+    could not see one. The profile now answers per model.
+    """
+
+    def test_profile_answers_per_model(self, profile):
+        # Claude ids accept images; every gpt id is rejected by Q with
+        # REQUEST_BODY_INVALID, so a single profile-wide flag cannot serve both.
+        assert profile.supports_vision_for_model("claude-opus-5") is True
+        assert profile.supports_vision_for_model("claude-sonnet-4.5") is True
+        assert profile.supports_vision_for_model("gpt-5.6-sol") is False
+
+    def test_unknown_model_gets_the_conservative_default(self, profile):
+        # catalog.info_for defaults unknown ids to vision-capable; assert whatever
+        # the catalog says rather than duplicating the policy here.
+        catalog = _mod("catalog")
+        assert profile.supports_vision_for_model("brand-new-model") == catalog.supports_vision(
+            "brand-new-model"
+        )
+
+    def test_end_to_end_routing_decision(self):
+        """The whole point: the routing layer must now say "native" for Claude."""
+        _clear_provider_caches()
+        from agent.image_routing import decide_image_input_mode
+
+        assert decide_image_input_mode("kiro", "claude-opus-5", {}) == "native"
+        assert decide_image_input_mode("kiro", "gpt-5.6-sol", {}) == "text"
+
+    def test_kiro_ide_inherits_the_hook(self):
+        _clear_provider_caches()
+        from agent.image_routing import decide_image_input_mode
+
+        assert decide_image_input_mode("kiro-ide", "claude-opus-5", {}) == "native"
+
+    def test_request_body_matches_the_routing_decision(self):
+        """Guard against the two halves disagreeing.
+
+        wire.build_request_body drops images for gpt ids independently of the
+        routing layer. If those two ever disagree, either images are silently lost
+        on Claude or a gpt request 400s.
+        """
+        wire = _mod("wire")
+        catalog = _mod("catalog")
+        content = [
+            {"type": "text", "text": "look"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGk="}},
+        ]
+        for model in ("claude-opus-5", "gpt-5.6-sol"):
+            body = wire.build_request_body([{"role": "user", "content": content}], model)
+            attached = "images" in body["conversationState"]["currentMessage"]["userInputMessage"]
+            assert attached == catalog.supports_vision(model), model
+
+
 class TestCatalog:
     def test_known_model_limits(self):
         catalog = _mod("catalog")

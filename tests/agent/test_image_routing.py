@@ -970,3 +970,97 @@ class TestCustomProviderVisionAlias:
             ]
         }
         assert _supports_vision_override(cfg, "custom:my-vllm", "other") is None
+
+
+# ─── provider-profile per-model vision hook ─────────────────────────────────
+
+
+class TestProviderProfileVisionHook:
+    """FORK: `_lookup_supports_vision` consults a registered provider plugin's
+    `supports_vision_for_model(model)` when models.dev has no entry.
+
+    Without this, a plugin provider with its own model names (Kiro's
+    claude-opus-5, gpt-5.6-sol, ...) resolves to None, `decide_image_input_mode`
+    returns "text", and the image never reaches the model — it answers that it
+    cannot see one. Reproduced with Kiro/claude-opus-5 before the fix.
+    """
+
+    class _Profile:
+        def __init__(self, answer):
+            self._answer = answer
+            self.supports_vision = False  # deliberately the misleading coarse flag
+
+        def supports_vision_for_model(self, model):
+            return self._answer
+
+    def _with_profile(self, profile):
+        """Patch provider lookup and force models.dev to stay silent."""
+        return patch("providers.get_provider_profile", return_value=profile), patch(
+            "agent.models_dev.get_model_capabilities", return_value=None
+        )
+
+    def test_hook_true_enables_native(self):
+        p1, p2 = self._with_profile(self._Profile(True))
+        with p1, p2:
+            assert _lookup_supports_vision("plugprov", "some-model", {}) is True
+            assert decide_image_input_mode("plugprov", "some-model", {}) == "native"
+
+    def test_hook_false_forces_text(self):
+        p1, p2 = self._with_profile(self._Profile(False))
+        with p1, p2:
+            assert _lookup_supports_vision("plugprov", "some-model", {}) is False
+            assert decide_image_input_mode("plugprov", "some-model", {}) == "text"
+
+    def test_hook_none_leaves_it_unknown(self):
+        """A provider may decline to answer for a model it does not recognise."""
+        p1, p2 = self._with_profile(self._Profile(None))
+        with p1, p2:
+            assert _lookup_supports_vision("plugprov", "some-model", {}) is None
+
+    def test_profile_wide_flag_is_NOT_used_as_a_fallback(self):
+        """The trap this fix originally fell into.
+
+        35 registered providers declare `supports_vision=False` — including
+        anthropic, gemini, bedrock, openrouter, vertex and xai, all of which
+        plainly do support vision. On those profiles the flag means "not
+        declared". Consulting it would convert an honest "unknown" into a hard
+        False and silently break images for any model models.dev has not caught
+        up with. Only the explicit per-model hook may be trusted.
+        """
+
+        class NoHook:
+            supports_vision = False  # must be ignored
+
+        p1, p2 = self._with_profile(NoHook())
+        with p1, p2:
+            assert _lookup_supports_vision("anthropic", "some-future-model", {}) is None
+
+    def test_models_dev_wins_over_the_hook(self):
+        """models.dev is authoritative for models it knows; a plugin must not
+        override it."""
+
+        class Caps:
+            supports_vision = True
+
+        with patch("providers.get_provider_profile", return_value=self._Profile(False)):
+            with patch("agent.models_dev.get_model_capabilities", return_value=Caps()):
+                assert _lookup_supports_vision("plugprov", "known-model", {}) is True
+
+    def test_config_override_still_wins_over_everything(self):
+        cfg = {"model": {"supports_vision": True}}
+        p1, p2 = self._with_profile(self._Profile(False))
+        with p1, p2:
+            assert _lookup_supports_vision("plugprov", "some-model", cfg) is True
+
+    def test_a_broken_profile_cannot_break_routing(self):
+        """An exception in a plugin must degrade to unknown, not raise."""
+
+        class Exploding:
+            supports_vision = True
+
+            def supports_vision_for_model(self, model):
+                raise RuntimeError("boom")
+
+        p1, p2 = self._with_profile(Exploding())
+        with p1, p2:
+            assert _lookup_supports_vision("plugprov", "some-model", {}) is None

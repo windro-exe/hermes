@@ -438,6 +438,48 @@ def _lookup_supports_vision(
     if caps is not None:
         return bool(caps.supports_vision)
 
+    # FORK: ask the registered provider plugin.
+    #
+    # models.dev only knows public catalog models. A plugin provider with its own
+    # model names (Kiro's claude-opus-5, gpt-5.6-sol, ...) falls through as
+    # "unknown", which decide_image_input_mode turns into image_mode="text" — the
+    # image never reaches the model and it answers that it cannot see one. The
+    # ProviderProfile already declares supports_vision; nothing consulted it.
+    #
+    # Placed AFTER models.dev on purpose: that data is authoritative for models it
+    # knows, and a plugin's coarse flag must not override it. Placed BEFORE the
+    # ollama probe because a declaration beats a network guess.
+    #
+    # ONLY the per-model hook is consulted, deliberately. The profile-wide
+    # ``supports_vision`` flag is NOT usable as a fallback: 35 registered
+    # providers declare it False, including anthropic, gemini, bedrock,
+    # openrouter, vertex and xai — all of which plainly do support vision. On
+    # those profiles the flag means "not declared", not "no vision", so treating
+    # it as authoritative would turn an honest "unknown" into a hard False and
+    # break images for any model models.dev has not caught up with yet. That is
+    # a worse bug than the one this block fixes.
+    #
+    # A provider opts in by implementing supports_vision_for_model(model) and
+    # returning True/False per model, or None to stay silent (Kiro: Claude yes,
+    # gpt-* no — Q rejects images on the gpt ids with REQUEST_BODY_INVALID).
+    try:
+        from providers import get_provider_profile
+
+        profile = get_provider_profile(provider)
+        if profile is not None:
+            per_model = getattr(profile, "supports_vision_for_model", None)
+            if callable(per_model):
+                resolved = per_model(model)
+                if resolved is not None:
+                    return bool(resolved)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(
+            "image_routing: provider profile vision lookup failed for %s:%s — %s",
+            provider,
+            model,
+            exc,
+        )
+
     base_url = _resolve_inference_base_url(cfg, provider)
     if not base_url and (provider or "").strip().lower() == "ollama":
         base_url = "http://localhost:11434/v1"

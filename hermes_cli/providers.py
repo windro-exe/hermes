@@ -209,12 +209,22 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
     ),
     # FORK: Kiro (Amazon Q). The base URL is loopback because the provider ships
     # a local translator -- Kiro speaks AWS Q, not an OpenAI-compatible API. See
-    # plugins/model-providers/kiro/. Without this overlay
-    # resolve_provider_full("kiro") returns None and a saved `provider: kiro`
-    # gets silently discarded in favour of env auto-detect.
+    # plugins/model-providers/kiro/. Without these overlays
+    # resolve_provider_full() returns None and a saved `provider: kiro` gets
+    # silently discarded in favour of env auto-detect.
+    #
+    # Two providers, one translator: `kiro` carries a pasted ksk_ key, `kiro-ide`
+    # carries the translator's session secret which authorises it to read the
+    # SSO token an installed Kiro already wrote. Same base URL for both.
     "kiro": HermesOverlay(
         transport="openai_chat",
         extra_env_vars=("KIRO_API_KEY",),
+        base_url_override="http://127.0.0.1:8779/v1",
+        base_url_env_var="KIRO_BASE_URL",
+    ),
+    "kiro-ide": HermesOverlay(
+        transport="openai_chat",
+        extra_env_vars=("KIRO_IDE_TOKEN",),
         base_url_override="http://127.0.0.1:8779/v1",
         base_url_env_var="KIRO_BASE_URL",
     ),
@@ -411,6 +421,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "gmi": "GMI Cloud",
     "upstage": "Upstage Solar",
     "kiro": "Kiro",
+    "kiro-ide": "Kiro IDE",
     "tencent-tokenhub": "Tencent TokenHub",
     "lmstudio": "LM Studio",
     "local": "Local endpoint",

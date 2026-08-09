@@ -774,6 +774,7 @@ from hermes_cli.model_setup_flows import (
     _model_flow_xai_oauth,
     _model_flow_qwen_oauth,
     _model_flow_kiro,
+    _model_flow_kiro_ide,
     _model_flow_minimax_oauth,
     _model_flow_custom,
     _model_flow_azure_foundry,
@@ -3407,6 +3408,15 @@ def select_provider_and_model(args=None):
     # to keep the rest of the wiring automatic.
     elif selected_provider == "kiro":
         _model_flow_kiro(config, current_model)
+
+    # FORK: kiro-ide is a separate provider so each has ONE credential source --
+    # `kiro` a pasted key, `kiro-ide` an installed Kiro's sign-in. That split is
+    # what lets the desktop route them to the right tabs (keys vs Accounts), since
+    # provider_catalog dispatches purely on auth_type. auth_type here is
+    # external_process, so it does NOT hit the api_key catch-all and needs this
+    # explicit branch.
+    elif selected_provider == "kiro-ide":
+        _model_flow_kiro_ide(config, current_model)
 
     elif selected_provider in {
         "openai-api",

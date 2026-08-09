@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-09 | Added | [Kiro split into two providers so each lands on the right settings tab](entries/2026-08-09-04-kiro-ide-provider.md) | current |
 | 2026-08-09 | Fixed | [`hermes_fork` was missing from py-modules, which would break packaged builds](entries/2026-08-09-03-package-hermes-fork.md) | current |
 | 2026-08-09 | Fixed | [`hermes update` could replace the whole fork with upstream's code](entries/2026-08-09-02-disconnect-upstream.md) | current |
 | 2026-08-09 | Added | [Kiro (Amazon Q) as a provider, without adding a transport to core](entries/2026-08-09-01-kiro-provider.md) | current |

@@ -10105,6 +10105,65 @@ def _copilot_acp_status() -> Dict[str, Any]:
     }
 
 
+def _kiro_ide_status() -> Dict[str, Any]:
+    """FORK: status for kiro-ide — credentials belong to an installed Kiro.
+
+    Unlike copilot-acp this reports real state, because the probe is cheap and
+    offline: the IDE writes an AWS SSO token to ``~/.aws/sso/cache/`` and the
+    plugin reads it. No network, no subprocess, so it is safe on a settings-page
+    render.
+
+    Three distinguishable outcomes, because "not working" for three different
+    reasons needs three different fixes: no Kiro installed, installed but not
+    signed in, or signed in and usable. Never raises — a failure here would 500
+    the whole Accounts tab.
+    """
+    try:
+        import importlib
+
+        from providers import get_provider_profile
+
+        if get_provider_profile("kiro-ide") is None:
+            raise RuntimeError("kiro provider plugin not installed")
+        kiro_auth = importlib.import_module("plugins.model_providers.kiro.auth")
+        status = kiro_auth.auth_status()
+    except Exception as exc:  # pragma: no cover - defensive
+        return {
+            "logged_in": False,
+            "source": "kiro_ide",
+            "source_label": f"Kiro provider unavailable ({exc})",
+            "token_preview": None,
+            "expires_at": None,
+            "has_refresh_token": False,
+        }
+
+    installs = status.get("installs") or []
+    if not installs:
+        label = "No Kiro IDE or CLI found on this machine"
+    elif not status.get("signed_in"):
+        label = f"{installs[0].get('label') or 'Kiro'} — installed, not signed in"
+    else:
+        label = f"{installs[0].get('label') or 'Kiro'} — signed in"
+
+    expires_at = None
+    epoch = status.get("expires_at_epoch")
+    if isinstance(epoch, (int, float)) and epoch > 0:
+        from datetime import datetime, timezone
+
+        expires_at = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    return {
+        "logged_in": bool(status.get("signed_in")),
+        "source": "kiro_ide",
+        "source_label": label,
+        # Deliberately never surfaced: the SSO access token is a live cloud
+        # credential and this card is rendered on a settings page.
+        "token_preview": None,
+        "expires_at": expires_at,
+        "has_refresh_token": bool(status.get("signed_in")),
+    }
+
+
 # Explicit, hand-tuned OAuth/account provider cards. These carry the bits that
 # can't be derived from the unified provider catalog: the OAuth ``flow`` shape,
 # the per-provider ``status_fn``, the ``cli_command`` fallback, and curated
@@ -10174,6 +10233,20 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
         "cli_command": "copilot /login",
         "docs_url": "https://docs.github.com/en/copilot",
         "status_fn": _copilot_acp_status,
+    },
+    # FORK: Kiro via an installed IDE/CLI. `external` because the sign-in is
+    # owned by the Kiro app — Hermes only reads the token it leaves behind.
+    # Without this explicit card the provider would still appear (the catalog
+    # union in _build_oauth_catalog picks up every accounts-tab provider), but
+    # with generic defaults and no status probe, so the card could not tell the
+    # user whether Kiro was installed or signed in.
+    {
+        "id": "kiro-ide",
+        "name": "Kiro IDE",
+        "flow": "external",
+        "cli_command": "hermes model  # then choose Kiro IDE",
+        "docs_url": "https://kiro.dev",
+        "status_fn": _kiro_ide_status,
     },
     # ── Anthropic / Claude entries sit at the bottom: the API-key path
     # first, then the subscription OAuth path (which only works with extra

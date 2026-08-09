@@ -112,6 +112,356 @@ class TestProfile:
         assert profile.build_extra_body(session_id="s") == {}
 
 
+class TestProviderSplit:
+    """Two providers, one credential source each.
+
+    Cramming a pasted key and a detected install behind one provider meant the
+    desktop could only render a text box, because ``provider_catalog`` routes
+    tabs purely on ``auth_type``. Split so each lands in its correct tab with no
+    bespoke GUI work.
+    """
+
+    def test_both_registered_with_distinct_auth_types(self):
+        _clear_provider_caches()
+        from providers import get_provider_profile
+
+        key_provider = get_provider_profile("kiro")
+        ide_provider = get_provider_profile("kiro-ide")
+        assert key_provider is not None and ide_provider is not None
+        assert key_provider.auth_type == "api_key"
+        # external_process is what routes to the Accounts tab.
+        assert ide_provider.auth_type == "external_process"
+
+    def test_they_are_not_the_same_object(self):
+        _clear_provider_caches()
+        from providers import get_provider_profile
+
+        assert get_provider_profile("kiro") is not get_provider_profile("kiro-ide")
+
+    def test_kiro_ide_is_no_longer_an_alias_of_kiro(self):
+        """It used to be. If it regresses, the Accounts entry silently vanishes."""
+        _clear_provider_caches()
+        from providers import get_provider_profile
+
+        assert get_provider_profile("kiro-ide").name == "kiro-ide"
+        assert "kiro-ide" not in get_provider_profile("kiro").aliases
+
+    def test_aliases_route_to_the_right_provider(self):
+        _clear_provider_caches()
+        from providers import get_provider_profile
+
+        assert get_provider_profile("kiro-api").name == "kiro"
+        assert get_provider_profile("kiro-cli").name == "kiro-ide"
+        assert get_provider_profile("kiro-desktop").name == "kiro-ide"
+
+    def test_tab_routing(self):
+        from hermes_cli.provider_catalog import provider_catalog
+
+        rows = {d.slug: d.tab for d in provider_catalog()}
+        assert rows.get("kiro") == "keys"
+        assert rows.get("kiro-ide") == "accounts"
+
+    def test_both_appear_in_the_picker(self):
+        """kiro-ide needs an EXPLICIT CANONICAL_PROVIDERS entry.
+
+        external_process is in the auto-inject skip list, so without the explicit
+        row it would be a registered provider that is invisible everywhere -- and
+        the parity test would not catch it, since that asserts the GUI covers the
+        picker, not the reverse.
+        """
+        from hermes_cli.models import CANONICAL_PROVIDERS
+
+        slugs = {p.slug for p in CANONICAL_PROVIDERS}
+        assert {"kiro", "kiro-ide"} <= slugs
+
+    def test_both_resolvable_with_their_own_credential_var(self):
+        from hermes_cli.providers import resolve_provider_full
+
+        key_def = resolve_provider_full("kiro", {}, [])
+        ide_def = resolve_provider_full("kiro-ide", {}, [])
+        assert key_def is not None and ide_def is not None
+        assert "KIRO_API_KEY" in key_def.api_key_env_vars
+        assert "KIRO_IDE_TOKEN" in ide_def.api_key_env_vars
+
+    def test_both_share_the_one_translator(self):
+        """One proxy serves both; it picks the credential from the bearer token."""
+        _clear_provider_caches()
+        from hermes_cli.providers import HERMES_OVERLAYS
+        from providers import get_provider_profile
+
+        assert get_provider_profile("kiro").base_url == get_provider_profile("kiro-ide").base_url
+        assert (
+            HERMES_OVERLAYS["kiro"].base_url_override
+            == HERMES_OVERLAYS["kiro-ide"].base_url_override
+        )
+
+    def test_labels(self):
+        from hermes_cli.providers import get_label
+
+        assert get_label("kiro") == "Kiro"
+        assert get_label("kiro-ide") == "Kiro IDE"
+
+    def test_ide_provider_ignores_a_passed_api_key(self):
+        """Critical: KIRO_IDE_TOKEN is the PROXY secret, not a Kiro credential.
+
+        Forwarding it to AWS as a bearer would leak a local secret to a third
+        party and fail the request. fetch_models must resolve from disk instead.
+        """
+        _clear_provider_caches()
+        from providers import get_provider_profile
+
+        ide = get_provider_profile("kiro-ide")
+        auth = _mod("auth")
+        client = _mod("client")
+
+        # Both are stubbed so the assertion cannot pass merely because this
+        # machine has no SSO token and the call never reaches the client.
+        resolve_calls: list[tuple] = []
+        sent_tokens: list[str] = []
+
+        fake_credential = auth.ResolvedCredential(token="sso-token-from-disk", source="kiro-ide")
+
+        original_resolve = auth.resolve_token
+        original_list = client.list_models
+        try:
+            def spy_resolve(explicit_key="", **kwargs):
+                resolve_calls.append((explicit_key, kwargs))
+                return fake_credential
+
+            auth.resolve_token = spy_resolve
+            client.list_models = lambda cred, **kw: sent_tokens.append(cred.token) or ["m"]
+            result = ide.fetch_models(api_key="proxy-session-secret-not-a-kiro-key")
+        finally:
+            auth.resolve_token = original_resolve
+            client.list_models = original_list
+
+        assert result == ["m"], "the stubbed path must actually have run"
+        assert sent_tokens == ["sso-token-from-disk"]
+        assert "proxy-session-secret-not-a-kiro-key" not in sent_tokens
+        # And it must not have been forwarded as the explicit key either.
+        assert resolve_calls and resolve_calls[0][0] in ("", None)
+
+    def test_both_setup_flows_exist(self):
+        from hermes_cli.model_setup_flows import _model_flow_kiro, _model_flow_kiro_ide
+
+        assert callable(_model_flow_kiro)
+        assert callable(_model_flow_kiro_ide)
+
+
+class TestInferenceWiring:
+    """The registries that only an end-to-end run catches.
+
+    A provider can register, resolve, sit in the picker and on the right tab with
+    every unit test green, and still be refused at inference time. Each of these
+    was found by running a real prompt, not by assertion.
+    """
+
+    def test_in_auth_provider_registry(self):
+        """PROVIDER_REGISTRY is the gate that raises "Unknown provider"."""
+        from hermes_cli.auth import PROVIDER_REGISTRY
+
+        entry = PROVIDER_REGISTRY.get("kiro-ide")
+        assert entry is not None, 'missing here => "Unknown provider" at inference time'
+        assert entry.auth_type == "external_process"
+        assert "KIRO_IDE_TOKEN" in entry.api_key_env_vars
+        # `kiro` is auto-extended (api_key) and must not be hand-added.
+        assert PROVIDER_REGISTRY.get("kiro") is not None
+
+    def test_runtime_provider_resolves_it(self, monkeypatch):
+        """resolve_runtime_provider populates api_key; without a branch there it
+        stays empty and surfaces as "No LLM provider configured"."""
+        import hermes_cli.runtime_provider as rp
+
+        # Patch on runtime_provider, not on auth: it does
+        # `from hermes_cli.auth import resolve_external_process_provider_credentials`,
+        # so the name is bound in this module and patching the source has no effect.
+        monkeypatch.setattr(
+            rp,
+            "resolve_external_process_provider_credentials",
+            lambda pid: {
+                "provider": pid,
+                "api_key": "session-secret",
+                "base_url": "http://127.0.0.1:8779/v1",
+                "source": "kiro-ide",
+            },
+        )
+        runtime = rp.resolve_runtime_provider(requested="kiro-ide")
+        assert runtime["provider"] == "kiro-ide"
+        assert runtime["api_mode"] == "chat_completions"
+        assert runtime["api_key"] == "session-secret"
+        assert runtime["base_url"] == "http://127.0.0.1:8779/v1"
+        # Nothing is spawned, unlike copilot-acp.
+        assert not runtime.get("command")
+
+    def test_credentials_raise_actionably_when_not_signed_in(self, monkeypatch):
+        import hermes_cli.auth as auth_mod
+
+        monkeypatch.setattr(
+            auth_mod,
+            "get_kiro_ide_status",
+            lambda: {"installed": True, "logged_in": False, "token_file": "/tmp/t.json"},
+        )
+        with pytest.raises(auth_mod.AuthError) as exc:
+            auth_mod.resolve_external_process_provider_credentials("kiro-ide")
+        assert exc.value.code == "kiro_not_signed_in"
+        # Must name the alternative, or the user is stuck.
+        assert "api key" in str(exc.value).lower()
+
+    def test_credentials_raise_actionably_when_not_installed(self, monkeypatch):
+        import hermes_cli.auth as auth_mod
+
+        monkeypatch.setattr(
+            auth_mod, "get_kiro_ide_status", lambda: {"installed": False, "logged_in": False}
+        )
+        with pytest.raises(auth_mod.AuthError) as exc:
+            auth_mod.resolve_external_process_provider_credentials("kiro-ide")
+        assert exc.value.code == "kiro_not_installed"
+
+
+class TestProxyPortCollision:
+    """A silent port fallback guarantees a confusing 401.
+
+    The provider's base_url is pinned to 127.0.0.1:8779 in HERMES_OVERLAYS, so it
+    cannot follow the server to another port. Binding elsewhere means Hermes keeps
+    dialling 8779, reaches a foreign proxy, and gets "invalid bearer token".
+    Measured with two Hermes instances on separate HERMES_HOMEs.
+    """
+
+    def test_taken_fixed_port_raises_instead_of_rebinding(self, monkeypatch):
+        """The guard must fire on a PRE-BIND probe, not on bind failure.
+
+        On Windows HTTPServer's allow_reuse_address lets a second bind to an
+        already-listening port succeed, so a bind-failure guard would be dead code
+        exactly where it matters. This drives ensure_running, which probes first.
+        """
+        proxy = _mod("proxy")
+
+        holder = proxy.KiroProxy(port=0).start(publish=False)
+        try:
+            taken = holder.port
+            assert proxy._port_is_serving(taken) is True
+
+            # Force ensure_running down the fixed-port path with no adoptable state.
+            monkeypatch.setattr(proxy, "_singleton", None)
+            monkeypatch.setattr(proxy, "read_state", lambda: None)
+            monkeypatch.setenv("KIRO_PROXY_PORT", str(taken))
+
+            with pytest.raises(RuntimeError) as exc:
+                proxy.ensure_running()
+            message = str(exc.value)
+            assert str(taken) in message
+            # Must tell the user how to run two instances deliberately.
+            assert "KIRO_PROXY_PORT" in message
+            assert "KIRO_BASE_URL" in message
+        finally:
+            holder.stop()
+            proxy._singleton = None
+
+    def test_free_port_is_not_reported_as_serving(self):
+        proxy = _mod("proxy")
+        server = proxy.KiroProxy(port=0).start(publish=False)
+        port = server.port
+        server.stop()
+        # Now free again.
+        assert proxy._port_is_serving(port) is False
+
+    def test_ephemeral_port_zero_still_allowed_to_fail_naturally(self):
+        """port=0 keeps the OS-assigns-a-port behaviour; only fixed ports are strict."""
+        proxy = _mod("proxy")
+        server = proxy.KiroProxy(port=0).start(publish=False)
+        try:
+            assert server.port > 0
+        finally:
+            server.stop()
+
+
+class TestTokenFileEncoding:
+    def test_bom_prefixed_token_file_is_readable(self, tmp_path):
+        """Kiro owns this file; we do not control its encoding.
+
+        A strict utf-8 read fails on a BOM with "Unexpected UTF-8 BOM", which
+        presents to the user as "not signed in" and sends them to re-authenticate
+        for no reason. utf-8-sig accepts both.
+        """
+        auth = _mod("auth")
+        path = tmp_path / "kiro-auth-token.json"
+        payload = json.dumps({"accessToken": "abc", "expiresAt": "2099-01-01T00:00:00Z"})
+        path.write_bytes(b"\xef\xbb\xbf" + payload.encode("utf-8"))
+
+        token = auth.read_token_file(path)
+        assert token.access_token == "abc"
+
+    def test_plain_utf8_token_file_still_readable(self, tmp_path):
+        auth = _mod("auth")
+        path = tmp_path / "kiro-auth-token.json"
+        path.write_text(json.dumps({"accessToken": "xyz"}), encoding="utf-8")
+        assert auth.read_token_file(path).access_token == "xyz"
+
+
+class TestAccountsCard:
+    """The Accounts-tab status card -- this is the 'scan' affordance."""
+
+    def test_card_is_in_the_oauth_catalog(self):
+        from hermes_cli.web_server import _build_oauth_catalog
+
+        ids = [row["id"] for row in _build_oauth_catalog()]
+        assert "kiro-ide" in ids
+        # The key provider belongs on the keys tab, not here.
+        assert "kiro" not in ids
+
+    def test_status_never_raises_and_hides_the_token(self):
+        from hermes_cli.web_server import _kiro_ide_status
+
+        status = _kiro_ide_status()
+        assert set(status) >= {
+            "logged_in",
+            "source",
+            "source_label",
+            "token_preview",
+            "expires_at",
+            "has_refresh_token",
+        }
+        # A live cloud credential must never reach a settings page.
+        assert status["token_preview"] is None
+
+    def test_status_distinguishes_not_installed_from_not_signed_in(self, monkeypatch):
+        """Three outcomes need three different user actions, so they must differ."""
+        import hermes_cli.web_server as ws
+
+        auth = _mod("auth")
+
+        monkeypatch.setattr(auth, "auth_status", lambda: {"installs": [], "signed_in": False})
+        assert "No Kiro" in ws._kiro_ide_status()["source_label"]
+
+        monkeypatch.setattr(
+            auth,
+            "auth_status",
+            lambda: {"installs": [{"label": "Kiro IDE 9.9"}], "signed_in": False},
+        )
+        label = ws._kiro_ide_status()["source_label"]
+        assert "not signed in" in label and "Kiro IDE 9.9" in label
+
+        monkeypatch.setattr(
+            auth,
+            "auth_status",
+            lambda: {"installs": [{"label": "Kiro IDE 9.9"}], "signed_in": True},
+        )
+        signed_in = ws._kiro_ide_status()
+        assert signed_in["logged_in"] is True
+        assert "signed in" in signed_in["source_label"]
+
+    def test_status_survives_a_broken_plugin(self, monkeypatch):
+        import hermes_cli.web_server as ws
+
+        auth = _mod("auth")
+        monkeypatch.setattr(
+            auth, "auth_status", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        status = ws._kiro_ide_status()
+        assert status["logged_in"] is False
+        assert "unavailable" in status["source_label"]
+
+
 class TestHermesWiring:
     """The bug class from test_upstage_provider.py: registered but not resolvable."""
 

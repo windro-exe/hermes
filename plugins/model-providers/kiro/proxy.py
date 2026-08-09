@@ -397,13 +397,27 @@ class KiroProxy:
     def start(self, *, publish: bool = True) -> "KiroProxy":
         try:
             server = ThreadingHTTPServer((self.host, self.requested_port), _Handler)
-        except OSError:
+        except OSError as exc:
             if self.requested_port == 0:
                 raise
-            # Preferred port taken (often a previous run, or something unrelated).
-            # Fall back to an OS-assigned one; the state file records the truth.
-            logger.info("kiro-proxy: port %s unavailable, using an ephemeral port", self.requested_port)
-            server = ThreadingHTTPServer((self.host, 0), _Handler)
+            # Do NOT silently fall back to an ephemeral port.
+            #
+            # The provider's base_url is a fixed 127.0.0.1:<port> baked into
+            # HERMES_OVERLAYS, so it cannot follow us to a different port. Binding
+            # elsewhere means Hermes keeps dialling the original port, reaches
+            # whatever else is there, and gets an opaque 401 from a proxy holding a
+            # different session secret. Measured: that is exactly what happened
+            # when a second Hermes with its own HERMES_HOME ran alongside the
+            # desktop backend. Failing loudly here is the only honest option.
+            raise RuntimeError(
+                f"Port {self.requested_port} on {self.host} is already in use by "
+                "something this process cannot adopt (no matching state file for "
+                "this HERMES_HOME). The Kiro provider's base URL is pinned to that "
+                "port, so it cannot be moved silently.\n"
+                "If you are deliberately running two Hermes instances with separate "
+                "profiles, give this one its own port with KIRO_PROXY_PORT=<n> and "
+                "point the provider at it with KIRO_BASE_URL=http://127.0.0.1:<n>/v1."
+            ) from exc
         server.daemon_threads = True
         server.session_secret = self.secret  # type: ignore[attr-defined]
         self._server = server
@@ -461,13 +475,32 @@ def ensure_running() -> "KiroProxy":
         if override.isdigit():
             port = int(override)
 
-        # A second Hermes process may already be serving this port. That proxy is
-        # this same implementation and authenticates per request, so adopting it
-        # is correct and avoids both a port clash and a redundant server.
-        adopted = _adopt_existing(port)
-        if adopted is not None:
-            _singleton = adopted
-            return _singleton
+        # Probe BEFORE binding. On Windows this is the only reliable check:
+        # HTTPServer sets allow_reuse_address, and SO_REUSEADDR there permits
+        # binding a port that is already in LISTEN state. The bind therefore
+        # succeeds, two servers race for connections on one port, and requests
+        # land on whichever wins -- producing an opaque 401 when the other one
+        # holds a different session secret. Relying on bind failure would make
+        # the guard below dead code on the platform that needs it most.
+        if _port_is_serving(port):
+            adopted = _adopt_existing(port)
+            if adopted is not None:
+                # Same implementation, authenticates per request, and we recovered
+                # its secret from the state file -- adopting is correct and avoids
+                # a redundant server.
+                _singleton = adopted
+                return _singleton
+            raise RuntimeError(
+                f"Something is already serving {DEFAULT_HOST}:{port} that this "
+                "process cannot adopt (no matching state file for this "
+                "HERMES_HOME, so its session secret is unknown). The Kiro "
+                "provider's base URL is pinned to that port and cannot be moved "
+                "silently.\n"
+                "If you are deliberately running two Hermes instances with "
+                "separate profiles, give this one its own port with "
+                "KIRO_PROXY_PORT=<n> and point the provider at it with "
+                "KIRO_BASE_URL=http://127.0.0.1:<n>/v1."
+            )
 
         # Reuse the previously published secret rather than minting a new one.
         # For the installed-Kiro path this secret is what gets stored as the
@@ -478,6 +511,23 @@ def ensure_running() -> "KiroProxy":
 
         _singleton = KiroProxy(port=port, secret=secret).start()
         return _singleton
+
+
+def _port_is_serving(port: int) -> bool:
+    """True when an HTTP server answers on ``port``.
+
+    A plain TCP connect would be enough to detect "in use", but the health route
+    also distinguishes our proxy from an unrelated service, which is what decides
+    whether adoption is even worth attempting.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        try:
+            return probe.connect_ex((DEFAULT_HOST, port)) == 0
+        except OSError:
+            return False
 
 
 def _adopt_existing(port: int) -> Optional["KiroProxy"]:

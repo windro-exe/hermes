@@ -773,6 +773,7 @@ from hermes_cli.model_setup_flows import (
     _model_flow_openai_codex,
     _model_flow_xai_oauth,
     _model_flow_qwen_oauth,
+    _model_flow_kiro,
     _model_flow_minimax_oauth,
     _model_flow_custom,
     _model_flow_azure_foundry,
@@ -3399,6 +3400,14 @@ def select_provider_and_model(args=None):
         _model_flow_vertex(config, current_model)
     elif selected_provider == "azure-foundry":
         _model_flow_azure_foundry(config, current_model)
+    # FORK: Kiro needs a two-way choice (scan for an installed Kiro IDE, or paste
+    # an API key), so it cannot use the plain api-key flow. This branch must stay
+    # ahead of the _is_profile_api_key_provider catch-all below, which would
+    # otherwise swallow it -- the profile declares auth_type="api_key" on purpose
+    # to keep the rest of the wiring automatic.
+    elif selected_provider == "kiro":
+        _model_flow_kiro(config, current_model)
+
     elif selected_provider in {
         "openai-api",
         "gemini",

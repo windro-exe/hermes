@@ -1,0 +1,5 @@
+name: kiro-provider
+kind: model-provider
+version: 1.0.0
+description: Kiro (Amazon Q) via a local translator - API key or an installed Kiro IDE
+author: windro

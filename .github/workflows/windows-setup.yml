@@ -1,0 +1,191 @@
+# Build the Windows setup/updater binary — Hermes-Setup.exe.
+#
+# WHY THIS EXISTS
+#
+# The desktop app's in-GUI "Update" button does not update anything itself. It
+# resolves HERMES_HOME/hermes-setup.exe and hands the job to that binary
+# (electron/main.ts resolveUpdaterBinary -> `--update --branch <b>`). It has to be
+# a separate process: the update rewrites the venv and the app bundle, so nothing
+# running from inside them can perform it.
+#
+# Upstream ships that binary AS its Windows download — Hermes-Setup.exe is the
+# installer, and it copies itself into HERMES_HOME on the way through. Anyone who
+# installed that way gets the update button for free.
+#
+# This fork's Windows installer was built with electron-builder, which packages the
+# Electron app only — the inner half. The result works but leaves
+# hermes-setup.exe absent, so resolveUpdaterBinary() returns null and the GUI falls
+# back to a "run this in your terminal" modal, permanently. This workflow closes
+# that gap the same way upstream does.
+#
+# WHY CI RATHER THAN LOCALLY
+#
+# It is a Rust/Tauri binary and needs the MSVC toolchain. windro's box has no
+# Rust, no MSVC and no Visual Studio, and installing Build Tools is several GB.
+# windows-latest runners ship both preinstalled, so this costs nothing locally —
+# the same reasoning that put linux-installers.yml here.
+#
+# workflow_dispatch ONLY, deliberately. This fork has ~23 workflows and 10 trigger
+# on push; that volume of notification mail is why Actions was switched off for the
+# repo. This one can never fire by itself.
+name: Build Windows setup/updater
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: 'Also build an NSIS installer (not just the raw updater exe)'
+        required: false
+        default: true
+        type: boolean
+
+# Least privilege: reads the repo, uploads artifacts. Publishing a release is a
+# separate deliberate act, not something a build should be able to do.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # npm ci across the workspace, then a cold Rust release build of a Tauri app.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Rust and MSVC are preinstalled on windows-latest; this only pins the
+      # toolchain so a runner image change cannot silently move us to nightly.
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          rustup show active-toolchain
+
+      # apps/* is an npm workspace member, so the root install covers the
+      # installer's own frontend deps too.
+      - uses: ./.github/actions/retry
+        with:
+          command: npm ci
+
+      # tauri.conf.json sets frontendDist to ../dist and beforeBuildCommand to
+      # `npm run build`; building explicitly here makes a frontend failure a
+      # distinct, readable step instead of noise inside the Rust build.
+      - name: Build installer frontend
+        working-directory: apps/bootstrap-installer
+        run: npm run build
+
+      - name: Verify frontend output exists
+        shell: pwsh
+        working-directory: apps/bootstrap-installer
+        run: |
+          if (-not (Test-Path dist/index.html)) {
+            Write-Output "::error::frontend dist/index.html missing - Tauri would embed nothing"
+            exit 1
+          }
+          Get-ChildItem dist | Select-Object -First 10 | Format-Table Name, Length
+
+      # NOTE bundle.targets in tauri.conf.json is ["app","dmg","appimage"] — no
+      # Windows entry — so `--bundles nsis` is required to get an installer. The
+      # raw Hermes-Setup.exe is produced either way, and that raw exe is the piece
+      # the update button actually needs.
+      - name: Build Hermes-Setup.exe
+        shell: pwsh
+        working-directory: apps/bootstrap-installer
+        run: |
+          if ("${{ inputs.bundle }}" -eq "true") {
+            npm run tauri -- build --bundles nsis
+          } else {
+            npm run tauri -- build --no-bundle
+          }
+
+      # The GUI looks for HERMES_HOME/hermes-setup.exe. Cargo's [[bin]] is named
+      # Hermes-Setup, which matches case-insensitively on Windows — but assert the
+      # binary exists rather than discovering it is missing after a download.
+      - name: Verify the updater binary
+        shell: pwsh
+        run: |
+          $exe = "apps/bootstrap-installer/src-tauri/target/release/Hermes-Setup.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Output "::error::Hermes-Setup.exe not produced at $exe"
+            Get-ChildItem apps/bootstrap-installer/src-tauri/target/release -Filter *.exe -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Output "  found instead: $($_.Name)" }
+            exit 1
+          }
+          $item = Get-Item $exe
+          Write-Output "Hermes-Setup.exe  $([math]::Round($item.Length/1MB,1)) MB"
+
+          # Sanity: a real PE executable, not a stub or a script.
+          $head = [System.IO.File]::ReadAllBytes($exe)[0..1]
+          if ([char]$head[0] + [char]$head[1] -ne 'MZ') {
+            Write-Output "::error::not a PE executable"
+            exit 1
+          }
+          if ($item.Length -lt 1MB) {
+            Write-Output "::error::implausibly small for a Tauri binary ($($item.Length) bytes)"
+            exit 1
+          }
+
+          # Deliberately NOT executed with any flag. There is no --help: lib.rs
+          # AppMode::from_args treats anything that is not --update as Install, so
+          # running it here would launch the installer GUI on the runner and hang
+          # the job (or start a real install). The flag surface is verified
+          # statically in the next step instead.
+
+      # Prove the shipped binary targets THIS fork. A stale slug here would make
+      # the updater clone upstream over the user's install - the exact failure
+      # recorded in fork/changelog/entries/2026-08-09-02-disconnect-upstream.md.
+      - name: Assert the binary is ours and accepts --update
+        shell: pwsh
+        run: |
+          $exe = "apps/bootstrap-installer/src-tauri/target/release/Hermes-Setup.exe"
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+
+          # The GUI hands off with `--update`; if that literal is absent the button
+          # would launch the INSTALLER instead of updating.
+          if ($text -notmatch '--update') {
+            Write-Output "::error::binary does not contain the --update flag literal"
+            exit 1
+          }
+
+          # A stale slug here would make the updater clone UPSTREAM over the user's
+          # install - the exact failure recorded in
+          # fork/changelog/entries/2026-08-09-02-disconnect-upstream.md.
+          if ($text -notmatch 'windro-exe/hermes') {
+            Write-Output "::error::binary does not reference windro-exe/hermes"
+            exit 1
+          }
+          if ($text -match 'NousResearch/hermes-agent') {
+            Write-Output "::error::binary still references NousResearch/hermes-agent"
+            exit 1
+          }
+          Write-Output "OK: --update present, references windro-exe/hermes, no upstream slug"
+
+      - name: Summarise artifacts
+        shell: pwsh
+        run: |
+          $rows = @()
+          $exe = Get-Item "apps/bootstrap-installer/src-tauri/target/release/Hermes-Setup.exe" -ErrorAction SilentlyContinue
+          if ($exe) { $rows += [pscustomobject]@{ file = $exe.Name; size = "$([math]::Round($exe.Length/1MB,1)) MB" } }
+          Get-ChildItem "apps/bootstrap-installer/src-tauri/target/release/bundle" -Recurse -Include *.exe -ErrorAction SilentlyContinue |
+            ForEach-Object { $rows += [pscustomobject]@{ file = $_.Name; size = "$([math]::Round($_.Length/1MB,1)) MB" } }
+          $lines = @('### Windows setup/updater', '', '| file | size |', '| --- | --- |')
+          foreach ($r in $rows) { $lines += "| ``$($r.file)`` | $($r.size) |" }
+          $lines += ''
+          $lines += 'Stage the raw `Hermes-Setup.exe` into `%LOCALAPPDATA%\hermes\` to enable the in-GUI Update button.'
+          $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hermes-windows-setup
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/bootstrap-installer/src-tauri/target/release/Hermes-Setup.exe
+            apps/bootstrap-installer/src-tauri/target/release/bundle/nsis/*.exe

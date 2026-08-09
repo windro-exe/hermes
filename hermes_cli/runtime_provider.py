@@ -1994,6 +1994,29 @@ def resolve_runtime_provider(
             "requested_provider": requested_provider,
         }
 
+    # FORK: kiro-ide. Needed because external_process is not resolved generically
+    # here -- copilot-acp gets its own branch above and this needs the same. Without
+    # it the provider registers, appears in the picker and on the Accounts tab, and
+    # is still rejected at inference time as "No LLM provider configured", because
+    # `api_key` never gets populated. Only an end-to-end run surfaces that; every
+    # unit assertion passes without it.
+    #
+    # No `command`/`args`: unlike copilot-acp nothing is spawned. The credential is
+    # the local translator's session secret, which authorises it to read the SSO
+    # token an installed Kiro wrote -- the Kiro credential itself never reaches
+    # Hermes. resolve_external_process_provider_credentials raises an actionable
+    # AuthError when Kiro is absent or not signed in.
+    if provider == "kiro-ide":
+        creds = resolve_external_process_provider_credentials(provider)
+        return {
+            "provider": "kiro-ide",
+            "api_mode": "chat_completions",
+            "base_url": creds.get("base_url", "").rstrip("/"),
+            "api_key": creds.get("api_key", ""),
+            "source": creds.get("source", "kiro-ide"),
+            "requested_provider": requested_provider,
+        }
+
     # Anthropic (native Messages API)
     if provider == "anthropic":
         # Allow base URL override from config.yaml model.base_url, but only

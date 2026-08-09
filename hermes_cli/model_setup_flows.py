@@ -799,13 +799,21 @@ def _kiro_modules():
     )
 
 
-def _model_flow_kiro(config, current_model=""):
-    """Kiro provider: reuse an installed Kiro IDE, or paste an API key.
+def _kiro_select_and_save(
+    mods,
+    *,
+    credential: str,
+    env_var: str,
+    current_model: str,
+    source_label: str,
+    resolve_with_key: bool,
+):
+    """Shared tail for both Kiro providers.
 
-    Kiro is not officially supported and speaks AWS Q rather than an
-    OpenAI-compatible API, so the provider ships a loopback translator. Both
-    credential styles end up as a bearer token; the difference is only where the
-    token comes from.
+    Validates the credential against Kiro, starts the loopback translator, lets
+    the user pick a model, then persists. Split out because the only real
+    difference between the two providers is where the credential came from --
+    duplicating this would be two copies of the save order to get wrong.
     """
     from hermes_cli.auth import (
         _prompt_model_selection,
@@ -813,102 +821,14 @@ def _model_flow_kiro(config, current_model=""):
         _update_config_for_provider,
     )
     from hermes_cli.config import save_env_value
-    from hermes_cli.main import _prompt_api_key
 
-    try:
-        kiro_auth, kiro_proxy, kiro_catalog, kiro_client = _kiro_modules()
-    except Exception as exc:
-        print(f"Kiro provider is unavailable: {exc}")
-        return
+    kiro_auth, kiro_proxy, kiro_catalog, kiro_client = mods
+    provider = "kiro" if resolve_with_key else "kiro-ide"
 
-    status = kiro_auth.auth_status()
-    installs = status.get("installs") or []
-
-    print("Kiro (Amazon Q)")
-    print("  Kiro has no OpenAI-compatible API, so Hermes runs a small local")
-    print("  translator on 127.0.0.1 and talks to that.")
-    print()
-    if installs:
-        print("  Detected on this machine:")
-        for entry in installs:
-            print(f"    - {entry['label']}")
-        if status.get("signed_in"):
-            print("  Status: signed in, credentials available.")
-        else:
-            print("  Status: installed but NOT signed in.")
-    else:
-        print("  No Kiro IDE or CLI found on this machine.")
-    print()
-    print("  1) Use the installed Kiro (reuse its sign-in)")
-    print("  2) Enter a Kiro API key")
-    print("  3) Cancel")
-    print()
-
-    try:
-        choice = input("Choose [1/2/3]: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\nNo change.")
-        return
-
-    credential_value = ""
-    source_label = ""
-
-    if choice == "1":
-        if not installs:
-            print("\nNo Kiro install detected, so there is no sign-in to reuse.")
-            print("Install Kiro from https://kiro.dev, sign in, then re-run this.")
-            print("Alternatively choose option 2 and paste an API key.")
-            return
-        if not status.get("signed_in"):
-            print("\nKiro is installed but not signed in.")
-            print(f"Expected credentials at: {status.get('token_file')}")
-            print("Open the Kiro IDE, sign in, then re-run this.")
-            if status.get("error"):
-                print(f"Detail: {str(status['error']).splitlines()[0]}")
-            return
-        # The translator resolves the SSO token from disk itself; the credential
-        # Hermes stores is the secret authorising it to do so.
-        try:
-            credential_value = kiro_proxy.session_secret()
-        except Exception as exc:
-            print(f"\nCould not start the local translator: {exc}")
-            return
-        source_label = "installed Kiro"
-
-    elif choice == "2":
-        existing = ""
-        try:
-            from hermes_cli.config import get_env_value
-
-            existing = get_env_value("KIRO_API_KEY") or os.getenv("KIRO_API_KEY", "")
-        except Exception:
-            existing = os.getenv("KIRO_API_KEY", "")
-        key, abort = _prompt_api_key(
-            "KIRO_API_KEY",
-            existing,
-            provider_label="Kiro",
-            signup_url="https://app.kiro.dev",
-        )
-        if abort or not key:
-            print("No change.")
-            return
-        if not key.startswith(kiro_auth.API_KEY_PREFIX):
-            print(
-                f"Warning: Kiro programmatic keys normally start with "
-                f"'{kiro_auth.API_KEY_PREFIX}'. Continuing anyway."
-            )
-        credential_value = key
-        source_label = "API key"
-    else:
-        print("No change.")
-        return
-
-    # Validate before saving anything, so a bad credential fails here rather than
-    # on the user's next prompt.
     print("\nChecking the credential against Kiro...")
     try:
         resolved = kiro_auth.resolve_token(
-            credential_value if choice == "2" else "", allow_refresh=True
+            credential if resolve_with_key else "", allow_refresh=True
         )
         models = kiro_client.list_models(resolved)
     except Exception as exc:
@@ -932,24 +852,143 @@ def _model_flow_kiro(config, current_model=""):
     selected = _prompt_model_selection(
         models,
         current_model=default,
-        confirm_provider="kiro",
+        confirm_provider=provider,
         confirm_base_url=base_url,
     )
     if not selected:
         print("No change.")
         return
 
-    save_env_value("KIRO_API_KEY", credential_value)
+    save_env_value(env_var, credential)
     save_env_value("KIRO_BASE_URL", base_url)
     _save_model_choice(selected)
-    _update_config_for_provider("kiro", base_url)
-    print(f"Default model set to: {selected} (Kiro via {source_label})")
+    _update_config_for_provider(provider, base_url)
+    print(f"Default model set to: {selected} ({source_label})")
     print(f"Local translator: {base_url}")
     if not kiro_catalog.info_for(selected).measured:
         print(
             "Note: this model's context limit is not measured, so a conservative "
             "default is used for context accounting."
         )
+
+
+def _model_flow_kiro(config, current_model=""):
+    """Kiro with a pasted API key.
+
+    Kiro speaks AWS Q, not an OpenAI-compatible API, so the provider ships a
+    loopback translator. This flow handles the ``ksk_`` programmatic key from
+    app.kiro.dev; reusing an installed Kiro's sign-in is the separate
+    ``kiro-ide`` provider, so each has exactly one credential source.
+    """
+    from hermes_cli.main import _prompt_api_key
+
+    try:
+        mods = _kiro_modules()
+    except Exception as exc:
+        print(f"Kiro provider is unavailable: {exc}")
+        return
+    kiro_auth = mods[0]
+
+    print("Kiro (Amazon Q) - API key")
+    print("  Get a key at https://app.kiro.dev")
+    print("  To reuse an installed Kiro IDE's sign-in instead, pick 'Kiro IDE'.")
+    print()
+
+    existing = ""
+    try:
+        from hermes_cli.config import get_env_value
+
+        existing = get_env_value("KIRO_API_KEY") or os.getenv("KIRO_API_KEY", "")
+    except Exception:
+        existing = os.getenv("KIRO_API_KEY", "")
+
+    key, abort = _prompt_api_key(
+        "KIRO_API_KEY",
+        existing,
+        provider_label="Kiro",
+        signup_url="https://app.kiro.dev",
+    )
+    if abort or not key:
+        print("No change.")
+        return
+    if not key.startswith(kiro_auth.API_KEY_PREFIX):
+        print(
+            f"Warning: Kiro programmatic keys normally start with "
+            f"'{kiro_auth.API_KEY_PREFIX}'. Continuing anyway."
+        )
+
+    _kiro_select_and_save(
+        mods,
+        credential=key,
+        env_var="KIRO_API_KEY",
+        current_model=current_model,
+        source_label="Kiro via API key",
+        resolve_with_key=True,
+    )
+
+
+def _model_flow_kiro_ide(config, current_model=""):
+    """Kiro reusing an installed Kiro IDE or CLI sign-in.
+
+    Scans for the install and reads the AWS SSO token the app leaves in
+    ``~/.aws/sso/cache/``. The three failure states are reported separately --
+    not installed, installed but not signed in, and signed in -- because each
+    needs a different action from the user.
+
+    The credential stored for this provider is the translator's session secret,
+    not a Kiro token: the real credential stays where the IDE put it, and the
+    secret is only what authorises the translator to read it.
+    """
+    try:
+        mods = _kiro_modules()
+    except Exception as exc:
+        print(f"Kiro provider is unavailable: {exc}")
+        return
+    kiro_auth, kiro_proxy = mods[0], mods[1]
+
+    status = kiro_auth.auth_status()
+    installs = status.get("installs") or []
+
+    print("Kiro IDE (Amazon Q) - reuse an installed Kiro's sign-in")
+    print()
+    if installs:
+        print("  Detected on this machine:")
+        for entry in installs:
+            print(f"    - {entry['label']}")
+    else:
+        print("  No Kiro IDE or CLI found on this machine.")
+    print()
+
+    if not installs:
+        print("Nothing to reuse. Install Kiro from https://kiro.dev and sign in,")
+        print("or choose the 'Kiro' provider and paste an API key instead.")
+        return
+
+    if not status.get("signed_in"):
+        print("Kiro is installed but not signed in.")
+        print(f"Expected credentials at: {status.get('token_file')}")
+        print("Open the Kiro IDE, sign in, then re-run this.")
+        if status.get("error"):
+            print(f"Detail: {str(status['error']).splitlines()[0]}")
+        print()
+        print("Alternatively choose the 'Kiro' provider and paste an API key.")
+        return
+
+    print("  Status: signed in.")
+    try:
+        secret = kiro_proxy.session_secret()
+    except Exception as exc:
+        print(f"Could not start the local translator: {exc}")
+        return
+
+    _kiro_select_and_save(
+        mods,
+        credential=secret,
+        env_var="KIRO_IDE_TOKEN",
+        current_model=current_model,
+        source_label="Kiro via the installed IDE",
+        resolve_with_key=False,
+    )
 
 
 def _model_flow_minimax_oauth(config, current_model="", args=None):

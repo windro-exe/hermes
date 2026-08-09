@@ -289,7 +289,12 @@ def read_token_file(path: Optional[Path] = None) -> StoredToken:
             relogin_required=True,
         )
     try:
-        data = json.loads(target.read_text(encoding="utf-8"))
+        # utf-8-sig, not utf-8: it decodes both BOM-prefixed and plain UTF-8.
+        # We do not control who writes this file -- the Kiro IDE owns it -- and a
+        # strict utf-8 read fails outright on a BOM with "Unexpected UTF-8 BOM",
+        # which reads like "not signed in" and sends the user to re-authenticate
+        # for no reason. Being permissive on read costs nothing.
+        data = json.loads(target.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise KiroAuthError(
             f"Kiro credential file is unreadable ({exc}). Sign in again in the Kiro IDE.\n"
@@ -360,7 +365,8 @@ def _resolve_client(token: StoredToken) -> tuple[str, str]:
         )
     ref = sso_cache_dir() / f"{token.client_id_hash}.json"
     try:
-        data = json.loads(ref.read_text(encoding="utf-8"))
+        # utf-8-sig for the same reason as the token file: another tool wrote it.
+        data = json.loads(ref.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise KiroAuthError(
             f"Could not read the SSO client registration at {ref} ({exc}).",

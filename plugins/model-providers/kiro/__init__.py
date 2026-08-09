@@ -100,12 +100,51 @@ class KiroProfile(ProviderProfile):
         return catalog.info_for(model).output
 
 
+class KiroIdeProfile(KiroProfile):
+    """Kiro using the credentials an installed Kiro IDE or CLI already holds.
+
+    Split out from ``kiro`` deliberately. ``auth_type`` is designed to describe
+    exactly one credential source, and cramming both a pasted key and a detected
+    install behind a single provider meant the desktop GUI -- which routes tabs
+    purely on ``auth_type`` -- could only ever render a text box. As two
+    providers each lands in its correct tab with no bespoke GUI work: ``kiro`` on
+    API keys, ``kiro-ide`` on Accounts.
+
+    Both point at the same loopback translator. No proxy change was needed for
+    this: it already picks the credential from the bearer token it is handed --
+    a ``ksk_`` prefix is used as-is, the session secret authorises reading the
+    SSO token from disk.
+    """
+
+    def fetch_models(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout: float = 8.0,
+    ) -> Optional[list[str]]:
+        """Resolve from the installed Kiro's token, never from a pasted key.
+
+        ``api_key`` here is the proxy session secret, not a Kiro credential, so
+        it is deliberately ignored -- passing it upstream would send the wrong
+        bearer to AWS.
+        """
+        try:
+            from . import client
+            from .auth import resolve_token
+
+            return client.list_models(resolve_token(allow_refresh=True), timeout=timeout)
+        except Exception as exc:
+            logger.debug("kiro-ide: fetch_models failed (%s); using the static catalog", exc)
+            return None
+
+
 kiro = KiroProfile(
     name="kiro",
-    aliases=("kiro-ide", "amazon-kiro", "kiro-q"),
+    aliases=("amazon-kiro", "kiro-q", "kiro-api"),
     api_mode="chat_completions",
     display_name="Kiro",
-    description="Kiro (Amazon Q) via a local translator - API key or an installed Kiro IDE",
+    description="Kiro (Amazon Q) with an API key from app.kiro.dev",
     signup_url="https://app.kiro.dev",
     env_vars=("KIRO_API_KEY", "KIRO_BASE_URL"),
     base_url=DEFAULT_BASE_URL,
@@ -118,4 +157,26 @@ kiro = KiroProfile(
     default_aux_model="claude-haiku-4.5",
 )
 
+kiro_ide = KiroIdeProfile(
+    name="kiro-ide",
+    aliases=("kiro-desktop", "kiro-cli"),
+    api_mode="chat_completions",
+    display_name="Kiro IDE",
+    description="Kiro (Amazon Q) reusing an installed Kiro IDE or CLI sign-in",
+    signup_url="https://kiro.dev",
+    # KIRO_IDE_TOKEN holds the translator's session secret, written by the setup
+    # flow -- it is never typed by the user and is not a Kiro credential. The real
+    # credential stays in ~/.aws/sso/cache/ where the IDE put it.
+    env_vars=("KIRO_IDE_TOKEN", "KIRO_BASE_URL"),
+    base_url=DEFAULT_BASE_URL,
+    # Routes this provider to the desktop Accounts tab rather than API keys, and
+    # keeps it out of the auto-injected OPTIONAL_ENV_VARS key fields.
+    auth_type="external_process",
+    supports_health_check=False,
+    supports_vision=True,
+    fallback_models=tuple(catalog.static_model_ids()),
+    default_aux_model="claude-haiku-4.5",
+)
+
 register_provider(kiro)
+register_provider(kiro_ide)

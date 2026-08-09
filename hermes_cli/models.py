@@ -1092,6 +1092,13 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("nvidia",         "NVIDIA NIM",               "NVIDIA NIM (Nemotron models via build.nvidia.com or local NIM)"),
     ProviderEntry("copilot",        "GitHub Copilot",           "GitHub Copilot (Uses GITHUB_TOKEN or gh auth token)"),
     ProviderEntry("copilot-acp",    "GitHub Copilot ACP",       "GitHub Copilot ACP (Spawns copilot --acp --stdio)"),
+    # FORK: `kiro` is auto-injected (auth_type=api_key), but `kiro-ide` is
+    # external_process, which the auto-inject block below deliberately skips
+    # ("non-api-key flows need bespoke picker UX"). Without this line it would be
+    # registered as a provider yet invisible in `hermes model`, the desktop
+    # Accounts tab, and provider_catalog() -- and the desktop parity test would
+    # not catch it, since that asserts the GUI covers the picker, not the reverse.
+    ProviderEntry("kiro-ide",       "Kiro IDE",                 "Kiro / Amazon Q (Reuses an installed Kiro IDE or CLI sign-in)"),
     ProviderEntry("huggingface",    "Hugging Face",             "Hugging Face Inference Providers"),
     ProviderEntry("gemini",         "Google AI Studio",         "Google AI Studio (Native Gemini API)"),
     ProviderEntry("vertex",         "Google Vertex AI",         "Google Vertex AI (Gemini via GCP; OAuth2 service account or ADC, GCP billing/quotas)"),

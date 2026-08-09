@@ -232,6 +232,23 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL,
         base_url_env_var="COPILOT_ACP_BASE_URL",
     ),
+    # FORK: kiro-ide needs an EXPLICIT entry. The auto-extend block below covers
+    # api-key providers only, so an external_process provider is registered,
+    # listed in the picker and resolvable -- and still rejected at inference time
+    # with "Unknown provider", because this dict is the gate. Only an end-to-end
+    # run catches that; every unit assertion passes without it.
+    #
+    # `kiro` itself is auto-extended (auth_type=api_key) and must NOT be added here.
+    # KIRO_IDE_TOKEN is the local translator's session secret, not a Kiro
+    # credential -- it authorises reading the SSO token the installed Kiro wrote.
+    "kiro-ide": ProviderConfig(
+        id="kiro-ide",
+        name="Kiro IDE",
+        auth_type="external_process",
+        inference_base_url="http://127.0.0.1:8779/v1",
+        api_key_env_vars=("KIRO_IDE_TOKEN",),
+        base_url_env_var="KIRO_BASE_URL",
+    ),
     "gemini": ProviderConfig(
         id="gemini",
         name="Google AI Studio",
@@ -6715,11 +6732,71 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
     }
 
 
+def _kiro_ide_modules():
+    """FORK: import the kiro plugin's internals, or raise.
+
+    Kept in one place because three call sites below need it and the plugin lives
+    under a hyphenated directory that is not an importable package name.
+    """
+    import importlib
+
+    from providers import get_provider_profile
+
+    if get_provider_profile("kiro-ide") is None:
+        raise AuthError(
+            "The kiro provider plugin is not installed "
+            "(expected plugins/model-providers/kiro/).",
+            provider="kiro-ide",
+            code="missing_plugin",
+        )
+    base = "plugins.model_providers.kiro"
+    return (
+        importlib.import_module(f"{base}.auth"),
+        importlib.import_module(f"{base}.proxy"),
+    )
+
+
+def get_kiro_ide_status() -> Dict[str, Any]:
+    """FORK: status for kiro-ide, whose credential belongs to an installed Kiro.
+
+    Cheap and offline -- reads the AWS SSO token the Kiro app leaves in
+    ``~/.aws/sso/cache/``. Never raises: this feeds `hermes doctor` and the
+    Accounts tab, and an exception there is worse than a negative answer.
+    """
+    try:
+        kiro_auth, _ = _kiro_ide_modules()
+        status = kiro_auth.auth_status()
+    except Exception as exc:
+        return {"configured": False, "logged_in": False, "provider": "kiro-ide", "error": str(exc)}
+
+    installs = status.get("installs") or []
+    signed_in = bool(status.get("signed_in"))
+    return {
+        # "configured" means usable NOW: an install alone is not enough, the user
+        # must also have signed in, or every request 401s.
+        "configured": signed_in,
+        "logged_in": signed_in,
+        "provider": "kiro-ide",
+        "name": "Kiro IDE",
+        "installed": bool(installs),
+        "installs": [i.get("label") for i in installs],
+        "token_file": status.get("token_file"),
+        "region": status.get("region") or "",
+    }
+
+
 def get_external_process_provider_status(provider_id: str) -> Dict[str, Any]:
     """Status snapshot for providers that run a local subprocess."""
     pconfig = PROVIDER_REGISTRY.get(provider_id)
     if not pconfig or pconfig.auth_type != "external_process":
         return {"configured": False}
+
+    # FORK: this function's body below is copilot-acp-specific despite the generic
+    # name -- it probes for the `copilot` binary. kiro-ide is external_process for
+    # tab-routing reasons but has nothing to do with a subprocess, so it branches
+    # out before any of that runs.
+    if provider_id == "kiro-ide":
+        return get_kiro_ide_status()
 
     command = (
         os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()
@@ -6764,6 +6841,9 @@ def get_auth_status(provider_id: Optional[str] = None) -> Dict[str, Any]:
         return get_minimax_oauth_auth_status()
     if target == "copilot-acp":
         return get_external_process_provider_status(target)
+    # FORK: kiro-ide's credential lives in ~/.aws/sso/cache/, not a subprocess.
+    if target == "kiro-ide":
+        return get_kiro_ide_status()
     if target == "azure-foundry":
         return _get_azure_foundry_auth_status()
     # API-key providers
@@ -6944,6 +7024,51 @@ def resolve_external_process_provider_credentials(provider_id: str) -> Dict[str,
     base_url = os.getenv(pconfig.base_url_env_var, "").strip() if pconfig.base_url_env_var else ""
     if not base_url:
         base_url = pconfig.inference_base_url
+
+    # FORK: kiro-ide is not subprocess-backed. Its "credential" is the local
+    # translator's session secret, which authorises the translator to read the SSO
+    # token the installed Kiro wrote -- the Kiro credential itself never passes
+    # through Hermes. Falls back to the 0600 state file so this still resolves
+    # when KIRO_IDE_TOKEN is absent from the environment (e.g. a fresh shell).
+    if provider_id == "kiro-ide":
+        kiro_auth, kiro_proxy = _kiro_ide_modules()
+        status = get_kiro_ide_status()
+        if not status.get("installed"):
+            raise AuthError(
+                "No Kiro IDE or CLI found on this machine. Install Kiro from "
+                "https://kiro.dev and sign in, or use the 'kiro' provider with an "
+                "API key from https://app.kiro.dev.",
+                provider=provider_id,
+                code="kiro_not_installed",
+            )
+        if not status.get("logged_in"):
+            raise AuthError(
+                "Kiro is installed but not signed in, so there is no credential to "
+                f"reuse (expected {status.get('token_file')}). Open the Kiro IDE and "
+                "sign in, or use the 'kiro' provider with an API key.",
+                provider=provider_id,
+                code="kiro_not_signed_in",
+            )
+        secret = os.getenv("KIRO_IDE_TOKEN", "").strip()
+        if not secret:
+            secret = str((kiro_proxy.read_state() or {}).get("secret") or "")
+        if not secret:
+            try:
+                secret = kiro_proxy.session_secret()
+            except Exception as exc:
+                raise AuthError(
+                    f"Could not start the local Kiro translator: {exc}",
+                    provider=provider_id,
+                    code="kiro_translator_failed",
+                ) from exc
+        return {
+            "provider": provider_id,
+            "api_key": secret,
+            "base_url": base_url.rstrip("/"),
+            "command": "",
+            "args": [],
+            "source": "kiro-ide",
+        }
 
     command = (
         os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()

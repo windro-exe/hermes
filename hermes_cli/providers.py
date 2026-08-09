@@ -207,6 +207,17 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
         base_url_override="https://api.upstage.ai/v1",
         base_url_env_var="UPSTAGE_BASE_URL",
     ),
+    # FORK: Kiro (Amazon Q). The base URL is loopback because the provider ships
+    # a local translator -- Kiro speaks AWS Q, not an OpenAI-compatible API. See
+    # plugins/model-providers/kiro/. Without this overlay
+    # resolve_provider_full("kiro") returns None and a saved `provider: kiro`
+    # gets silently discarded in favour of env auto-detect.
+    "kiro": HermesOverlay(
+        transport="openai_chat",
+        extra_env_vars=("KIRO_API_KEY",),
+        base_url_override="http://127.0.0.1:8779/v1",
+        base_url_env_var="KIRO_BASE_URL",
+    ),
     "ollama-cloud": HermesOverlay(
         transport="openai_chat",
         base_url_override="https://ollama.com/v1",
@@ -399,6 +410,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "xiaomi": "Xiaomi MiMo",
     "gmi": "GMI Cloud",
     "upstage": "Upstage Solar",
+    "kiro": "Kiro",
     "tencent-tokenhub": "Tencent TokenHub",
     "lmstudio": "LM Studio",
     "local": "Local endpoint",

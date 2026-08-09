@@ -1,4 +1,4 @@
-<!-- Temporary dev-phase file for windro's fork. Safe to delete with the rest of fork/. -->
+﻿<!-- Temporary dev-phase file for windro's fork. Safe to delete with the rest of fork/. -->
 
 # Fork changelog
 
@@ -13,7 +13,7 @@ Read this whole file before writing an entry. Read the index before changing cod
 
 ## Why this exists
 
-This fork edits a codebase that upstream is actively rewriting — hundreds of commits
+This fork edits a codebase that upstream is actively rewriting â€” hundreds of commits
 a week. Three failures happen without a log like this:
 
 1. **An agent reverts a fix it doesn't understand.** It sees an odd-looking line,
@@ -37,7 +37,7 @@ Write one for anything that changes behavior, performance, or structure:
 - a dependency change
 - a config or build change
 - a rule change in `AGENTS.md`
-- **a correction to a previous entry** (as a new entry — see Append-only below)
+- **a correction to a previous entry** (as a new entry â€” see Append-only below)
 
 Skip it for: typo fixes in comments, formatting, and anything with no behavioral or
 structural effect. If you're unsure, write one. A useless entry costs a minute; a
@@ -46,7 +46,7 @@ missing one costs an afternoon of archaeology.
 ## How to write one
 
 1. Copy `TEMPLATE.md` into `entries/`.
-2. Name it `YYYY-MM-DD-NN-short-slug.md` — date, a two-digit sequence for that day,
+2. Name it `YYYY-MM-DD-NN-short-slug.md` â€” date, a two-digit sequence for that day,
    then a slug that says what happened. Example:
    `2026-07-27-01-agent-fork-rules.md`. The sequence makes same-day ordering
    unambiguous.
@@ -73,7 +73,7 @@ Do not write `+23/-0` or "changed 47 lines." Those numbers go stale on the next
 commit that touches the file. In this repo the same figure went stale **three
 times, each time inside the commit that was fixing the previous stale number.**
 
-Instead describe the **shape** — "one added block, no removals" — and give the
+Instead describe the **shape** â€” "one added block, no removals" â€” and give the
 command:
 
 ```bash
@@ -90,7 +90,7 @@ Measured while 66 commits behind, it reported 111 changed files instead of the r
 Write the command you ran and the result you got. If you did not run it, say so.
 "Should be faster" is not a finding. Acceptable:
 
-> `venv/Scripts/python.exe -m pytest tests/fork/ -q` → 52 passed.
+> `venv/Scripts/python.exe -m pytest tests/fork/ -q` â†’ 52 passed.
 > Did not measure the renderer; would need a CPU profile.
 
 ### Name the mechanism, not just the file.
@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-09 | Added | [The in-GUI Update button had no updater binary to hand off to](entries/2026-08-09-05-windows-setup-workflow.md) | current |
 | 2026-08-09 | Added | [Kiro split into two providers so each lands on the right settings tab](entries/2026-08-09-04-kiro-ide-provider.md) | current |
 | 2026-08-09 | Fixed | [`hermes_fork` was missing from py-modules, which would break packaged builds](entries/2026-08-09-03-package-hermes-fork.md) | current |
 | 2026-08-09 | Fixed | [`hermes update` could replace the whole fork with upstream's code](entries/2026-08-09-02-disconnect-upstream.md) | current |
@@ -143,14 +144,14 @@ Newest first. `Superseded by` means read the newer entry instead.
 | 2026-07-31 | Fixed | [Project rules were read once per session; added the project_rule tool](entries/2026-07-31-01-rules-mid-session-and-rule-tool.md) | current |
 | 2026-07-29 | Added | [Project rules and IDEA.md, editable entirely in the UI](entries/2026-07-29-02-project-rules-ui.md) | current |
 | 2026-07-29 | Added | [Per-project rules directory and IDEA.md loading](entries/2026-07-29-01-project-rules-loader.md) | current |
-| 2026-07-29 | Fixed | [Composer glass was invisible — dark-on-dark needs a brightness lift](entries/2026-07-29-02-composer-glass-visibility.md) | current |
+| 2026-07-29 | Fixed | [Composer glass was invisible â€” dark-on-dark needs a brightness lift](entries/2026-07-29-02-composer-glass-visibility.md) | current |
 | 2026-07-29 | Performance | [Scroll jank: timeline tracker measured every message every frame (21 -> 44 fps)](entries/2026-07-29-01-timeline-scroll-offsets.md) | current |
 | 2026-07-28 | Changed | [Composer glass: less transparent by default, user-adjustable lever](entries/2026-07-28-02-composer-glass-setting.md) | corrected by 2026-07-29-02 |
 | 2026-07-28 | Performance | [Artifacts page: column projection instead of 30 full transcripts](entries/2026-07-28-01-artifacts-field-projection.md) | current |
 | 2026-07-27 | Performance | [Scroll jank fixed: patch-package + use-stick-to-bottom getComputedStyle removal](entries/2026-07-27-10-scroll-patch-applied.md) | current |
-| 2026-07-27 | Docs | [Scroll-library getComputedStyle — real, blocked on a patch-package decision](entries/2026-07-27-09-scroll-getcomputedstyle-investigation.md) | superseded by 10 |
-| 2026-07-27 | Docs | [Bundle splitting investigated — no change, wrong optimization for local-disk Electron](entries/2026-07-27-08-bundle-investigation.md) | current |
-| 2026-07-27 | Docs | [Session-load path investigated — no change, claims already done or unsafe](entries/2026-07-27-07-session-load-investigation.md) | current (artifacts half superseded by 2026-07-28-01) |
+| 2026-07-27 | Docs | [Scroll-library getComputedStyle â€” real, blocked on a patch-package decision](entries/2026-07-27-09-scroll-getcomputedstyle-investigation.md) | superseded by 10 |
+| 2026-07-27 | Docs | [Bundle splitting investigated â€” no change, wrong optimization for local-disk Electron](entries/2026-07-27-08-bundle-investigation.md) | current |
+| 2026-07-27 | Docs | [Session-load path investigated â€” no change, claims already done or unsafe](entries/2026-07-27-07-session-load-investigation.md) | current (artifacts half superseded by 2026-07-28-01) |
 | 2026-07-27 | Performance | [Code-card glow: opacity cross-fade instead of box-shadow](entries/2026-07-27-06-code-card-glow.md) | current |
 | 2026-07-27 | Performance | [Streaming renderer: visibleGroups + content-text memo (three claims rejected)](entries/2026-07-27-05-streaming-renderer.md) | current |
 | 2026-07-27 | Performance | [Model picker: memoize credential-pool reads, warm caches at startup](entries/2026-07-27-04-model-picker-latency.md) | current |

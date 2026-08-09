@@ -61,18 +61,22 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_CATALOG_URL = (
-    "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
-)
-# Fallback fetch chain. The Docusaurus site is served through Vercel, which
-# occasionally returns HTTP 403 + x-vercel-mitigated: challenge for non-
-# browser clients (urllib, curl). When that happens the disk cache goes
-# stale and new model releases never reach the picker. The raw GitHub URL
-# is the same manifest published from the same repo and is not bot-gated,
-# so we fall through to it whenever the primary URL fails.
-DEFAULT_CATALOG_FALLBACK_URLS: tuple[str, ...] = (
-    "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/website/static/api/model-catalog.json",
-)
+# FORK: the catalog is served from this fork, not upstream's site.
+#
+# Upstream fetched its Docusaurus site first and fell back to raw GitHub. This
+# fork publishes no site, so raw GitHub is the only source -- and it is the
+# better one anyway: upstream's note below records that the site is Vercel-hosted
+# and returns 403 + x-vercel-mitigated to non-browser clients often enough to let
+# the disk cache go stale. The manifest is tracked in-repo at
+# website/static/api/model-catalog.json, so it is guaranteed to exist at this URL.
+from hermes_fork import fork_raw_url as _fork_raw_url  # noqa: E402
+
+DEFAULT_CATALOG_URL = _fork_raw_url("website/static/api/model-catalog.json")
+
+#: No secondary source: there is nothing to fall back TO that isn't upstream.
+#: An empty chain means a fetch failure falls through to the in-repo copy that
+#: ``local_catalog_path()`` resolves, which is the correct behaviour for a fork.
+DEFAULT_CATALOG_FALLBACK_URLS: tuple[str, ...] = ()
 DEFAULT_TTL_HOURS = 1
 DEFAULT_FETCH_TIMEOUT = 8.0
 SUPPORTED_SCHEMA_VERSION = 1

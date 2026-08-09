@@ -5,14 +5,18 @@
  * Run with: node --test electron/update-remote.test.ts
  * (Wired into npm test:desktop:platforms in package.json.)
  *
- * Why this matters: a public install can carry
- * origin=git@github.com:NousResearch/hermes-agent.git. A background
+ * Why this matters: an install can carry
+ * origin=git@github.com:windro-exe/hermes.git. A background
  * `git fetch origin` then authenticates over SSH and, with a FIDO2/passkey
  * key, triggers an unexplained hardware-touch prompt. isOfficialSshRemote
- * must reliably recognize the official SSH remote (in every URL form,
+ * must reliably recognize our own SSH remote (in every URL form,
  * case-insensitively) so the caller can swap in the anonymous HTTPS path —
- * while NOT misclassifying forks, other hosts, or the HTTPS remote (which
+ * while NOT misclassifying other repos, other hosts, or the HTTPS remote (which
  * never prompts and should keep the normal fetch path).
+ *
+ * FORK: "official" throughout means THIS fork. These assertions previously named
+ * NousResearch/hermes-agent, so a fork install got no HTTPS substitution and
+ * could still raise a hardware prompt on a passive check.
  */
 
 import assert from 'node:assert/strict'
@@ -28,14 +32,23 @@ import {
 } from './update-remote'
 
 test('canonicalGitHubRemote normalizes SSH and HTTPS forms to the same value', () => {
-  assert.equal(canonicalGitHubRemote('git@github.com:NousResearch/hermes-agent.git'), OFFICIAL_REPO_CANONICAL)
-  assert.equal(canonicalGitHubRemote('git@github.com:NousResearch/hermes-agent'), OFFICIAL_REPO_CANONICAL)
-  assert.equal(canonicalGitHubRemote('ssh://git@github.com/NousResearch/hermes-agent.git'), OFFICIAL_REPO_CANONICAL)
-  assert.equal(canonicalGitHubRemote('https://github.com/NousResearch/hermes-agent.git'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('git@github.com:windro-exe/hermes.git'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('git@github.com:windro-exe/hermes'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('ssh://git@github.com/windro-exe/hermes.git'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('https://github.com/windro-exe/hermes.git'), OFFICIAL_REPO_CANONICAL)
   // Case-insensitive: an uppercased owner still canonicalizes to the same repo.
-  assert.equal(canonicalGitHubRemote('git@github.com:nousresearch/hermes-agent.git'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('git@github.com:WINDRO-EXE/hermes.git'), OFFICIAL_REPO_CANONICAL)
   // Trailing slashes are stripped.
-  assert.equal(canonicalGitHubRemote('https://github.com/NousResearch/hermes-agent/'), OFFICIAL_REPO_CANONICAL)
+  assert.equal(canonicalGitHubRemote('https://github.com/windro-exe/hermes/'), OFFICIAL_REPO_CANONICAL)
+})
+
+test('canonicalGitHubRemote does not map upstream onto this fork', () => {
+  // FORK guard: upstream must canonicalize to something else entirely, or an
+  // upstream-pointed install would be treated as ours.
+  assert.notEqual(
+    canonicalGitHubRemote('git@github.com:NousResearch/hermes-agent.git'),
+    OFFICIAL_REPO_CANONICAL
+  )
 })
 
 test('canonicalGitHubRemote is empty for falsy input', () => {
@@ -45,30 +58,32 @@ test('canonicalGitHubRemote is empty for falsy input', () => {
 })
 
 test('isSshRemote detects scp-like and ssh:// forms only', () => {
-  assert.equal(isSshRemote('git@github.com:NousResearch/hermes-agent.git'), true)
-  assert.equal(isSshRemote('ssh://git@github.com/NousResearch/hermes-agent.git'), true)
-  assert.equal(isSshRemote('https://github.com/NousResearch/hermes-agent.git'), false)
+  assert.equal(isSshRemote('git@github.com:windro-exe/hermes.git'), true)
+  assert.equal(isSshRemote('ssh://git@github.com/windro-exe/hermes.git'), true)
+  assert.equal(isSshRemote('https://github.com/windro-exe/hermes.git'), false)
   assert.equal(isSshRemote(''), false)
   assert.equal(isSshRemote(null), false)
 })
 
-test('isOfficialSshRemote is true only for the official repo over SSH', () => {
-  assert.equal(isOfficialSshRemote('git@github.com:NousResearch/hermes-agent.git'), true)
-  assert.equal(isOfficialSshRemote('git@github.com:NousResearch/hermes-agent'), true)
-  assert.equal(isOfficialSshRemote('ssh://git@github.com/NousResearch/hermes-agent.git'), true)
+test('isOfficialSshRemote is true only for our own repo over SSH', () => {
+  assert.equal(isOfficialSshRemote('git@github.com:windro-exe/hermes.git'), true)
+  assert.equal(isOfficialSshRemote('git@github.com:windro-exe/hermes'), true)
+  assert.equal(isOfficialSshRemote('ssh://git@github.com/windro-exe/hermes.git'), true)
   // Case-insensitive owner/repo match.
-  assert.equal(isOfficialSshRemote('git@github.com:nousresearch/hermes-agent.git'), true)
+  assert.equal(isOfficialSshRemote('git@github.com:WINDRO-EXE/hermes.git'), true)
 })
 
-test('isOfficialSshRemote does NOT match forks, other hosts, or HTTPS', () => {
-  // A fork over SSH belongs to the user — fetching it is their own remote,
-  // not the official upstream, so the SSH-avoidance swap must not apply.
-  assert.equal(isOfficialSshRemote('git@github.com:someuser/hermes-agent.git'), false)
-  // Same repo name on a different host is not the official repo.
-  assert.equal(isOfficialSshRemote('git@gitlab.com:NousResearch/hermes-agent.git'), false)
-  // HTTPS to the official repo never prompts for SSH/FIDO2, so it keeps the
-  // normal fetch path — must not be flagged as an official SSH remote.
-  assert.equal(isOfficialSshRemote('https://github.com/NousResearch/hermes-agent.git'), false)
+test('isOfficialSshRemote does NOT match other repos, hosts, or HTTPS', () => {
+  // Someone else's repo over SSH is their remote, not ours, so the
+  // SSH-avoidance swap must not apply.
+  assert.equal(isOfficialSshRemote('git@github.com:someuser/hermes.git'), false)
+  // FORK: upstream is explicitly not ours.
+  assert.equal(isOfficialSshRemote('git@github.com:NousResearch/hermes-agent.git'), false)
+  // Same repo name on a different host is not our repo.
+  assert.equal(isOfficialSshRemote('git@gitlab.com:windro-exe/hermes.git'), false)
+  // HTTPS to our repo never prompts for SSH/FIDO2, so it keeps the normal fetch
+  // path — must not be flagged as an SSH remote needing substitution.
+  assert.equal(isOfficialSshRemote('https://github.com/windro-exe/hermes.git'), false)
   assert.equal(isOfficialSshRemote(''), false)
   assert.equal(isOfficialSshRemote(null), false)
 })

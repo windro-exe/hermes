@@ -120,8 +120,19 @@ _UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
 # (e.g. nix-built hermes — no local git history to count against).
 UPDATE_AVAILABLE_NO_COUNT = -1
 
-_UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
-_OFFICIAL_REPO_CANONICAL = "github.com/nousresearch/hermes-agent"
+# FORK: these now describe THIS fork, not NousResearch.
+#
+# The names are kept to hold the diff to two lines, so read "upstream" here as
+# "the repo this install updates from" -- which for this fork is the fork itself.
+# This is not cosmetic: `_check_via_rev` below runs `git ls-remote` against this
+# URL and compares the result to the LOCAL revision to decide whether an update
+# exists. Pointed at NousResearch, a fork's revision can never match, so it both
+# contacted upstream on every check and reported "update available" permanently.
+from hermes_fork import FORK_CANONICAL as _FORK_CANONICAL  # noqa: E402
+from hermes_fork import FORK_HTTPS_URL as _FORK_HTTPS_URL  # noqa: E402
+
+_UPSTREAM_REPO_URL = _FORK_HTTPS_URL
+_OFFICIAL_REPO_CANONICAL = _FORK_CANONICAL
 
 
 def _canonical_github_remote(url: str | None) -> str:
@@ -422,7 +433,11 @@ def get_git_banner_state(repo_dir: Optional[Path] = None) -> Optional[dict]:
     return {"upstream": upstream, "local": local, "ahead": max(ahead, 0)}
 
 
-_RELEASE_URL_BASE = "https://github.com/NousResearch/hermes-agent/releases/tag"
+# FORK: release links point at this fork's releases. Upstream's docstring below
+# says "forks don't get a link" -- but this fork publishes its own releases
+# (e.g. desktop-win-v0.17.0), so linking upstream's tags would send users to
+# release notes for code they are not running.
+from hermes_fork import FORK_RELEASE_TAG_URL_BASE as _RELEASE_URL_BASE  # noqa: E402
 _latest_release_cache: Optional[tuple] = None  # (tag, url) once resolved
 
 
@@ -430,8 +445,12 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
     """Return ``(tag, release_url)`` for the latest git tag, or None.
 
     Local-only — runs ``git describe --tags --abbrev=0`` against the
-    Hermes checkout. Cached per-process. Release URL always points at the
-    canonical NousResearch/hermes-agent repo (forks don't get a link).
+    Hermes checkout. Cached per-process.
+
+    FORK: the release URL points at THIS fork (see ``_RELEASE_URL_BASE``).
+    Upstream's version of this docstring said it "always points at the canonical
+    NousResearch/hermes-agent repo (forks don't get a link)" — no longer true, and
+    it would have linked release notes for code the user is not running.
     """
     global _latest_release_cache
     if _latest_release_cache is not None:

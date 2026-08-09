@@ -31,6 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Set
 
+# FORK: single source of truth for this fork's repo identity. Imports nothing but
+# __future__, so it cannot introduce an import cycle here.
+from hermes_fork import fork_raw_url as _fork_raw_url
+
 from hermes_cli.route_identity import normalize_route_base_url
 from hermes_cli.secret_prompt import masked_secret_prompt
 
@@ -3098,11 +3102,13 @@ DEFAULT_CONFIG = {
     # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
     # curated model lists for OpenRouter and Nous Portal from this URL,
     # falling back to the in-repo snapshot on network failure.  Lets us
-    # update model picker lists without shipping a hermes-agent release.
-    # The default URL is served by the docs site GitHub Pages deploy.
+    # update model picker lists without shipping a release.
+    # FORK: served from this fork's raw GitHub content, not upstream's docs site.
+    # This fork publishes no website, and the manifest is tracked in-repo at
+    # website/static/api/model-catalog.json so the URL is always populated.
     "model_catalog": {
         "enabled": True,
-        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+        "url": _fork_raw_url("website/static/api/model-catalog.json"),
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `hermes model` invocation; network failures
         # silently fall back to the stale cache.

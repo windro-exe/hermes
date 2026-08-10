@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { $activeProfile } from '@/store/profile'
+
 import type { ComposerAttachment } from './composer'
 import {
   $parkedQueueSessions,
@@ -245,5 +247,89 @@ describe('parked queue sessions', () => {
     migrateQueuedPrompts('rt-old', 'rt-new')
 
     expect(isQueueParked('rt-new')).toBe(false)
+  })
+})
+
+describe('profile isolation on migration', () => {
+  beforeEach(() => {
+    // This block sits outside the suite above, so it needs its own reset —
+    // without it entries accumulate across cases and the assertions drift.
+    window.localStorage.removeItem(QUEUE_STORAGE_KEY)
+    $queuedPromptsBySession.set({})
+    $parkedQueueSessions.set({})
+    $activeProfile.set('default')
+  })
+
+  // A profile switch and a backend bounce both change the active session key.
+  // migrateQueuedPrompts cannot tell them apart from the keys alone, so it
+  // filters per entry on the profile stamped at enqueue. Without that, a prompt
+  // queued in profile B was re-homed onto profile A's session and sent there.
+  it('stamps the active profile on a queued entry', () => {
+    $activeProfile.set('b')
+    const entry = enqueueQueuedPrompt('s1', { text: 'hi', attachments: [] })
+
+    expect(entry?.profile).toBe('b')
+  })
+
+  it('does NOT migrate an entry belonging to another profile', () => {
+    $activeProfile.set('b')
+    enqueueQueuedPrompt('s1', { text: 'written in B', attachments: [] })
+
+    // User switches to profile A; the active session key changes with it.
+    $activeProfile.set('a')
+    const moved = migrateQueuedPrompts('s1', 's2')
+
+    expect(moved).toBe(false)
+    expect(getQueuedPrompts('s2')).toHaveLength(0)
+    // and it must still be there for profile B, not silently dropped
+    expect(getQueuedPrompts('s1').map(e => e.text)).toEqual(['written in B'])
+  })
+
+  it('still migrates within the same profile (backend bounce)', () => {
+    $activeProfile.set('b')
+    enqueueQueuedPrompt('s1', { text: 'same profile', attachments: [] })
+
+    const moved = migrateQueuedPrompts('s1', 's2')
+
+    expect(moved).toBe(true)
+    expect(getQueuedPrompts('s2').map(e => e.text)).toEqual(['same profile'])
+    expect(getQueuedPrompts('s1')).toHaveLength(0)
+  })
+
+  it('keeps foreign entries behind while moving matching ones', () => {
+    $activeProfile.set('b')
+    enqueueQueuedPrompt('s1', { text: 'from B', attachments: [] })
+    $activeProfile.set('a')
+    enqueueQueuedPrompt('s1', { text: 'from A', attachments: [] })
+
+    // Active profile is A, so only A's entry may move.
+    expect(migrateQueuedPrompts('s1', 's2')).toBe(true)
+    expect(getQueuedPrompts('s2').map(e => e.text)).toEqual(['from A'])
+    expect(getQueuedPrompts('s1').map(e => e.text)).toEqual(['from B'])
+  })
+
+  it('treats a pre-upgrade entry with no profile as belonging to the active one', () => {
+    // Entries persisted before the profile field existed must not be stranded.
+    $queuedPromptsBySession.set({
+      s1: [{ id: 'old', text: 'legacy', attachments: [], queuedAt: 1 }]
+    })
+    $activeProfile.set('anything')
+
+    expect(migrateQueuedPrompts('s1', 's2')).toBe(true)
+    expect(getQueuedPrompts('s2').map(e => e.text)).toEqual(['legacy'])
+  })
+
+  it('leaves the park on the source when entries stay behind', () => {
+    $activeProfile.set('b')
+    enqueueQueuedPrompt('s1', { text: 'from B', attachments: [] })
+    $activeProfile.set('a')
+    enqueueQueuedPrompt('s1', { text: 'from A', attachments: [] })
+    parkQueuedPrompts('s1')
+
+    migrateQueuedPrompts('s1', 's2')
+
+    // B's entry is still parked; clearing it would auto-send on return to B.
+    expect(isQueueParked('s1')).toBe(true)
+    expect(isQueueParked('s2')).toBe(true)
   })
 })

@@ -140,6 +140,31 @@ export const $projectScope = persistentAtom<string>(PROJECT_SCOPE_KEY, ALL_PROJE
   encode: value => value || ALL_PROJECTS
 })
 
+// FORK: reset the scope when the profile changes.
+//
+// Projects live in each profile's own projects.db, but this pointer was a single
+// flat key. After a switch the sidebar stayed "inside" a project id that does not
+// exist in the new profile, and `resolveNewSessionCwd` looks that id up in
+// $projectTree to choose a new chat's working directory — so it resolved the
+// PREVIOUS profile's project path and persisted it.
+//
+// Reset rather than scope-per-profile: a project id is meaningless in another
+// profile, so there is nothing worth remembering per profile, and $projectScope is
+// a persistentAtom whose key is fixed at construction. The subscription lives here
+// because projects.ts already imports the profile store — doing it in profile.ts
+// would be an import cycle.
+let _scopeProfile: string | null = null
+
+$activeGatewayProfile.subscribe(value => {
+  const key = (value ?? '').trim() || 'default'
+
+  if (_scopeProfile !== null && _scopeProfile !== key) {
+    $projectScope.set(ALL_PROJECTS)
+  }
+
+  _scopeProfile = key
+})
+
 // Enter a project: scope the sidebar to it and make it the active project
 // (best-effort — the durable pointer is nice-to-have, the view scope is the
 // point). Never opens a session.

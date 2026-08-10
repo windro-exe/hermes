@@ -173,3 +173,72 @@ describe('profile-scoped storage keys', () => {
     })
   })
 })
+
+describe('new-chat draft is per profile', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    setProfileForScopedKeys('default')
+  })
+
+  it('does not restore another profile new-chat draft', async () => {
+    const { stashSessionDraft, takeSessionDraft } = await import('@/store/composer')
+
+    setProfileForScopedKeys('a')
+    stashSessionDraft(null, 'half-written in A', [])
+
+    setProfileForScopedKeys('b')
+    // The bug: profile B opened a new chat prefilled with A's text, and pressing
+    // Enter sent it into B's conversation.
+    expect(takeSessionDraft(null).text).toBe('')
+
+    setProfileForScopedKeys('a')
+    expect(takeSessionDraft(null).text).toBe('half-written in A')
+  })
+
+  it('keeps the bare bucket for the default profile so drafts survive upgrade', async () => {
+    const { stashSessionDraft, takeSessionDraft } = await import('@/store/composer')
+
+    setProfileForScopedKeys('default')
+    stashSessionDraft(null, 'existing draft', [])
+
+    expect(takeSessionDraft(null).text).toBe('existing draft')
+  })
+
+  it('session-scoped drafts are unaffected (already unique per profile)', async () => {
+    const { stashSessionDraft, takeSessionDraft } = await import('@/store/composer')
+
+    setProfileForScopedKeys('a')
+    stashSessionDraft('session-123', 'tied to a session', [])
+
+    setProfileForScopedKeys('b')
+    expect(takeSessionDraft('session-123').text).toBe('tied to a session')
+  })
+})
+
+describe('project scope resets on a profile switch', () => {
+  it('drops a project id that does not exist in the new profile', async () => {
+    const { $activeGatewayProfile } = await import('@/store/profile')
+    const { $projectScope, ALL_PROJECTS } = await import('@/store/projects')
+
+    $activeGatewayProfile.set('a')
+    $projectScope.set('p_deadbeef')
+    expect($projectScope.get()).toBe('p_deadbeef')
+
+    $activeGatewayProfile.set('b')
+
+    // Left alone, resolveNewSessionCwd looks this id up in $projectTree and
+    // resolves the PREVIOUS profile's project path for the new chat.
+    expect($projectScope.get()).toBe(ALL_PROJECTS)
+  })
+
+  it('does not reset when the profile has not actually changed', async () => {
+    const { $activeGatewayProfile } = await import('@/store/profile')
+    const { $projectScope } = await import('@/store/projects')
+
+    $activeGatewayProfile.set('a')
+    $projectScope.set('p_keepme')
+    $activeGatewayProfile.set('a')
+
+    expect($projectScope.get()).toBe('p_keepme')
+  })
+})

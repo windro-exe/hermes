@@ -47,6 +47,51 @@ export const setRememberedSessionId = (id: null | string, profile?: null | strin
   persistString(rememberedSessionKey(profile), id)
 
 /**
+ * FORK: the active profile, mirrored into this module for key scoping.
+ *
+ * `lastSessionId` above was scoped per profile for #63590, but the keys beside it
+ * were not — and two of them undid that fix in practice:
+ *
+ *   - `lastRoute` is preferred over the remembered session id on restore, so a
+ *     flat route key sent a relaunch straight back into another profile's
+ *     conversation.
+ *   - the workspace cwd key namespaces by profile for REMOTE connections and not
+ *     for local ones, so every local profile shared one "last folder", which then
+ *     seeded new sessions and new terminals in another profile's directory.
+ *
+ * `lastSessionId` takes the profile as a parameter because `profile.ts` imports
+ * this module (`setConnection`) and importing `$activeGatewayProfile` back would
+ * be a cycle. That works for callers that already hold the profile, but the
+ * workspace-cwd readers are all internal to this module, so they read this mirror
+ * instead. `profile.ts` pushes it from the one subscription that already handles
+ * a profile change.
+ */
+let activeProfileForKeys = 'default'
+
+/** Point profile-scoped keys at `profile`. Returns true when it actually moved. */
+export function setProfileForScopedKeys(profile: null | string): boolean {
+  const next = (profile ?? '').trim() || 'default'
+
+  if (next === activeProfileForKeys) {
+    return false
+  }
+
+  activeProfileForKeys = next
+
+  return true
+}
+
+export const getProfileForScopedKeys = (): string => activeProfileForKeys
+
+/**
+ * Suffix a storage key with the profile, leaving the default profile on the bare
+ * key so an existing install's remembered state survives the upgrade — the same
+ * compatibility rule `rememberedSessionKey` uses.
+ */
+const profileScopedKey = (base: string, profile: string = activeProfileForKeys): string =>
+  !profile || profile === 'default' ? base : `${base}.${profile}`
+
+/**
  * The profile a routed session belongs to, for keying the remembered id.
  *
  * Prefer the owning profile recorded on the session row (the cross-profile
@@ -72,16 +117,32 @@ export function rememberedSessionProfile(
 
 // The last non-overlay route (a page like /skills, or a session route), so a
 // relaunch lands back where you were instead of a bare new-chat.
+//
+// FORK: profile-scoped. A session route is persisted here (`appViewForPath`
+// returns 'chat', which is not an overlay view), and the restore path PREFERS
+// this over the profile-scoped remembered session id — so one flat key meant a
+// relaunch under profile B navigated to profile A's session, reintroducing the
+// bleed #63590 fixed for `lastSessionId`.
 const LAST_ROUTE_KEY = 'hermes.desktop.lastRoute'
 
-export const getRememberedRoute = (): null | string => storedString(LAST_ROUTE_KEY)
-export const setRememberedRoute = (path: null | string) => persistString(LAST_ROUTE_KEY, path)
+export const getRememberedRoute = (profile?: null | string): null | string =>
+  storedString(profileScopedKey(LAST_ROUTE_KEY, (profile ?? '').trim() || activeProfileForKeys))
+export const setRememberedRoute = (path: null | string, profile?: null | string) =>
+  persistString(profileScopedKey(LAST_ROUTE_KEY, (profile ?? '').trim() || activeProfileForKeys), path)
 
 let configuredDefaultProjectDir = ''
 
 function workspaceCwdKey(connection: HermesConnection | null = $connection.get()): string {
   if (connection?.mode !== 'remote') {
-    return WORKSPACE_CWD_KEY
+    // FORK: scope local connections by profile too.
+    //
+    // The remote branch below already namespaces by baseUrl AND profile; the
+    // local branch returned one flat key, so every local profile shared a single
+    // "last folder you entered". That value seeds new sessions
+    // (createBackendSessionForSend) and new terminals (createTerminal), so after a
+    // profile switch a fresh chat could start in another profile's project
+    // directory — and the agent would then read and write files there.
+    return profileScopedKey(WORKSPACE_CWD_KEY)
   }
 
   const base = encodeURIComponent(connection.baseUrl || 'remote')
@@ -355,6 +416,22 @@ export const $currentFastMode = atom(storedBoolean(COMPOSER_FAST_KEY, false))
 // reflection of the truth the gateway reports rather than its own store.
 export const $yoloActive = atom(false)
 export const $currentCwd = atom(getRememberedWorkspaceCwd())
+
+/**
+ * FORK: re-read profile-scoped session state after the active profile changes.
+ *
+ * `$currentCwd` is seeded from storage at module load, when the active profile is
+ * not yet known — so it always starts on the default profile's bucket. Without a
+ * re-read, switching profile leaves the previous profile's folder in the atom, and
+ * that value is what seeds new sessions and new terminals.
+ *
+ * Mirrors the pattern `session-states.ts` already uses (per-profile map plus a
+ * re-hydrate on `$activeGatewayProfile`). Called from `profile.ts`, which owns the
+ * subscription.
+ */
+export function rehydrateProfileScopedSessionState(): void {
+  $currentCwd.set(getRememberedWorkspaceCwd())
+}
 
 /**
  * The working directory of the session you are actually looking at.

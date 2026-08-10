@@ -1204,7 +1204,16 @@ def _profile_scoped(handler):
 # Placeholder ``terminal.cwd`` values that don't name a real directory — the
 # gateway resolves these to the home dir at runtime, so they must NOT be treated
 # as an explicit workspace (mirrors gateway/run.py's config bridge).
-_CWD_PLACEHOLDERS = {".", "auto", "cwd"}
+#
+# FORK: imported rather than redeclared. This set existed in three places
+# (here, hermes_cli/web_server.py::_fs_default_cwd, and the canonical
+# gateway/cwd_placeholder.py) and the copies had drifted: both inlined versions
+# fell back to the PROCESS cwd where the shared helper falls back to the home
+# dir. With the common `terminal.cwd: .`, that made a non-project session inherit
+# whatever directory the backend happened to start in — so the desktop composer
+# showed an unrelated repository's branch and diff stats, and the file browser
+# opened somewhere arbitrary.
+from gateway.cwd_placeholder import CWD_PLACEHOLDERS as _CWD_PLACEHOLDERS  # noqa: E402
 
 
 def _configured_cwd_from_cfg(cfg: dict | None) -> str | None:
@@ -1273,8 +1282,20 @@ def _default_session_cwd() -> str:
     created AND resumed sessions land in the configured ``terminal.cwd`` rather
     than ``os.getcwd()`` when the in-memory gateway's process env has no bridged
     ``TERMINAL_CWD``.
+
+    FORK: the final fallback is the HOME dir, not ``os.getcwd()``.
+
+    ``gateway/cwd_placeholder.py`` — the canonical resolver, and the contract the
+    comment on ``_CWD_PLACEHOLDERS`` above claims to mirror — resolves a
+    placeholder to ``messaging or home_fallback``. This function returned the
+    backend process's working directory instead. With the common
+    ``terminal.cwd: .`` that is not a workspace at all, it is wherever the backend
+    was started, so a session with no project inherited an unrelated directory:
+    the composer's git widget showed that repo's branch and uncommitted diff, and
+    file tools defaulted there. The home dir is a defined, harmless location and
+    is what every other implementation of this rule already returns.
     """
-    return _launch_configured_cwd() or os.getenv("TERMINAL_CWD") or os.getcwd()
+    return _launch_configured_cwd() or os.getenv("TERMINAL_CWD") or str(Path.home())
 
 
 def write_json(obj: dict) -> bool:

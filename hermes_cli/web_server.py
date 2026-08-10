@@ -2025,16 +2025,29 @@ def _fs_find_git_root(start: Path) -> str | None:
 
 
 def _fs_default_cwd() -> str:
+    """Default directory for the file-browser API.
+
+    FORK: falls back to the HOME dir, not ``Path.cwd()``, and takes the
+    placeholder set from the canonical resolver instead of inlining it.
+
+    ``gateway/cwd_placeholder.py`` resolves a placeholder ``terminal.cwd`` to
+    ``messaging or home_fallback``. This copy had drifted to the process working
+    directory, so with the common ``terminal.cwd: .`` the file browser opened
+    wherever the backend was launched rather than a defined location. Same drift
+    as ``tui_gateway.server._default_session_cwd``; both now agree with the helper.
+    """
+    from gateway.cwd_placeholder import CWD_PLACEHOLDERS
+
     cfg_terminal = load_config().get("terminal") or {}
     raw = str(cfg_terminal.get("cwd") or os.environ.get("TERMINAL_CWD") or "").strip()
-    if raw and raw not in {".", "auto", "cwd"}:
+    if raw and raw not in CWD_PLACEHOLDERS:
         try:
             candidate = Path(raw).expanduser().resolve(strict=False)
             if candidate.is_dir():
                 return str(candidate)
         except (OSError, RuntimeError):
             pass
-    return str(Path.cwd())
+    return str(Path.home())
 
 
 def _fs_git_branch(cwd: str) -> str:

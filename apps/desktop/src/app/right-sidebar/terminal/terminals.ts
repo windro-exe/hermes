@@ -1,7 +1,7 @@
-import { atom, computed } from 'nanostores'
+﻿import { atom, computed } from 'nanostores'
 
 import { readKey, writeKey } from '@/lib/storage'
-import { $currentCwd } from '@/store/session'
+import { $activeSessionCwd } from '@/store/session'
 
 import { setTerminalTakeover } from '../store'
 
@@ -15,7 +15,7 @@ export interface TerminalEntry {
   title: string
   auto: boolean
   /** Working directory, snapshotted once at creation. Terminals live outside
-   *  session/project state — the only thing they inherit is this initial cwd
+   *  session/project state â€” the only thing they inherit is this initial cwd
    *  (the project root if opened in one, else the backend's default). Switching
    *  sessions never moves or recreates a terminal. */
   cwd: string
@@ -25,7 +25,7 @@ export interface TerminalEntry {
   restoreCwd?: string
   /** Serialized xterm scrollback from the last session, replayed on relaunch so
    *  the tab reopens with its recent history (VS Code parity). Processes are NOT
-   *  revived — a fresh shell starts beneath the restored buffer. Captured live
+   *  revived â€” a fresh shell starts beneath the restored buffer. Captured live
    *  for user tabs only; agent mirrors stay runtime-only. */
   reviveBuffer?: string
   /** `user` = interactive PTY shell. `agent` = read-only mirror of an agent
@@ -113,7 +113,7 @@ function loadPersistedTerminals(): PersistedTerminalState {
   }
 }
 
-// Persist synchronously on every change (the app-wide convention — see panes.ts
+// Persist synchronously on every change (the app-wide convention â€” see panes.ts
 // / layout.ts). Capturing history this way means a snapshot is already on disk
 // well before the renderer tears down, so app quit needs no unload hook.
 function persistTerminals(list: readonly TerminalEntry[], activeTerminalId: null | string) {
@@ -157,8 +157,16 @@ const newId = () =>
   globalThis.crypto?.randomUUID?.() ?? `term-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
 /** Append a fresh terminal and focus it. Captures the current cwd once (its only
- *  tie to session/project state); pass an explicit cwd to override. Returns the id. */
-export function createTerminal(cwd: string = $currentCwd.get()): string {
+ *  tie to session/project state); pass an explicit cwd to override. Returns the id.
+ *
+ *  FORK: defaults to `$activeSessionCwd`, not `$currentCwd`. `$currentCwd` is a
+ *  persisted global holding whichever folder you last ENTERED â€” never written back
+ *  from the session you are actually looking at â€” so a new terminal could open in
+ *  a stale directory (and, before the key was scoped per profile, one belonging to
+ *  another profile) and the user would then type commands there.
+ *  `$activeSessionCwd` is the focused session's directory, falling back to the
+ *  remembered workspace when no session is focused. */
+export function createTerminal(cwd: string = $activeSessionCwd.get()): string {
   const id = newId()
   $terminals.set([...$terminals.get(), { id, title: 'Terminal', auto: true, cwd, kind: 'user' }])
   $activeTerminalId.set(id)
@@ -166,13 +174,13 @@ export function createTerminal(cwd: string = $currentCwd.get()): string {
   return id
 }
 
-// Procs we've already surfaced a tab for — so closing an agent tab doesn't
+// Procs we've already surfaced a tab for â€” so closing an agent tab doesn't
 // resurrect it on the next poll while the process is still running.
 const surfacedProcs = new Set<string>()
 
 const findByProc = (procId: string) => $terminals.get().find(term => term.procId === procId)
 
-/** Auto-surface an agent background process as a read-only tab — once. Returns
+/** Auto-surface an agent background process as a read-only tab â€” once. Returns
  *  the tab id, or null if it was already surfaced and the user has since closed it. */
 export function ensureAgentTerminal(procId: string, title: string): string | null {
   const existing = findByProc(procId)
@@ -262,8 +270,8 @@ export function closeTerminal(id: string): void {
 }
 
 /** Close the read-only agent tab mirroring a background process. The agent
- *  drives this via the desktop-gated `close_terminal` tool → `terminal.close`.
- *  The process is NOT killed — only the view is dropped; `surfacedProcs` keeps
+ *  drives this via the desktop-gated `close_terminal` tool â†’ `terminal.close`.
+ *  The process is NOT killed â€” only the view is dropped; `surfacedProcs` keeps
  *  it from auto-resurfacing, and the status-stack row can reopen it on demand.
  *  No-op when no such tab exists. */
 export function closeAgentTerminalByProc(procId: string): boolean {

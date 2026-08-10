@@ -355,8 +355,21 @@ export function useSessionActions({
 
       try {
         // An explicit one-shot workspace target (null → detached, string → that
-        // folder) wins; otherwise the live cwd, then the project-aware default
-        // (resolveNewSessionCwd — a project's new session keeps its repo cwd).
+        // folder) wins; otherwise the project-aware default (resolveNewSessionCwd
+        // — a project's new session keeps its repo cwd, and it falls back to
+        // workspaceCwdForNewSession for a bare chat).
+        //
+        // FORK: `$currentCwd.get().trim() ||` used to sit ahead of
+        // resolveNewSessionCwd here. $currentCwd is a PERSISTED GLOBAL holding
+        // whichever folder you last entered — forever, across restarts — so a new
+        // chat silently inherited it, which is precisely what
+        // workspaceCwdForNewSession's docstring says must not happen ("rather than
+        // silently in the last repo you touched"). Worse, until the key was scoped
+        // per profile that folder could belong to a different profile, so the agent
+        // would read and write in another profile's repository.
+        //
+        // Dropping the term does not lose the project case: resolveNewSessionCwd
+        // reads $projectScope first and only then falls back.
         const workspaceTarget = $newChatWorkspaceTarget.get()
 
         const cwd =
@@ -364,7 +377,7 @@ export function useSessionActions({
             ? ''
             : typeof workspaceTarget === 'string'
               ? workspaceTarget.trim()
-              : $currentCwd.get().trim() || resolveNewSessionCwd()
+              : resolveNewSessionCwd()
 
         const params = await desktopSessionCreateParams(cwd)
         const created = await requestGateway<SessionCreateResponse>('session.create', params)

@@ -480,12 +480,32 @@ describe('createBackendSessionForSend profile routing', () => {
     expect(params).toMatchObject({ source: 'desktop' })
   })
 
-  it('passes the current workspace cwd into session.create', async () => {
+  it('does NOT inherit the persisted global cwd into a new session', async () => {
+    // FORK: this previously asserted the opposite — that $currentCwd was passed
+    // straight through. $currentCwd is a persisted global holding whichever folder
+    // you last ENTERED, forever, across restarts. Passing it here made a bare new
+    // chat silently start in the last repo you touched, which is exactly what
+    // workspaceCwdForNewSession's docstring says must not happen; and before the
+    // key was scoped per profile that folder could belong to another profile, so
+    // the agent would read and write in the wrong repository.
+    //
+    // The project case is not lost: resolveNewSessionCwd consults $projectScope
+    // first and only then falls back.
     const params = await createWith(() => {
-      $currentCwd.set('/remote/worktree')
+      $currentCwd.set('/stale/last/folder/i/entered')
     })
 
-    expect(params).toMatchObject({ cwd: '/remote/worktree' })
+    expect(params).not.toMatchObject({ cwd: '/stale/last/folder/i/entered' })
+  })
+
+  it('a project-scoped new session still gets that project cwd', async () => {
+    const params = await createWith(() => {
+      $currentCwd.set('/stale/last/folder')
+      $projectTree.set([{ id: 'p_abc', name: 'proj', path: '/repos/proj', repos: [] } as never])
+      $projectScope.set('p_abc')
+    })
+
+    expect(params).toMatchObject({ cwd: '/repos/proj' })
   })
 
   it('freezes the visible selector state before profile readiness and sends fast: false explicitly', async () => {

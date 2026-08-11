@@ -1,6 +1,9 @@
 import { atom } from 'nanostores'
 
 import { triggerHaptic } from '@/lib/haptics'
+// FORK: value import from session.ts is cycle-free — session.ts only imports a
+// TYPE from this module, which is erased at runtime.
+import { getProfileForScopedKeys } from '@/store/session'
 
 export interface ComposerAttachment {
   id: string
@@ -107,7 +110,27 @@ export interface SessionDraft {
   text: string
 }
 
-const draftKey = (scope: string | null | undefined) => scope?.trim() || NEW_SESSION_DRAFT_KEY
+const draftKey = (scope: string | null | undefined) => {
+  const trimmed = scope?.trim()
+
+  if (trimmed) {
+    return trimmed
+  }
+
+  // FORK: the new-chat draft bucket must be per profile.
+  //
+  // Session drafts are keyed by session id, which is already unique per profile.
+  // The new-chat bucket is the one shared constant, so an unsent draft typed in
+  // profile A was restored in profile B — and pressing Enter sent profile A's
+  // text into profile B's conversation. Attachments ride along too, carrying
+  // `path` values from the other profile.
+  //
+  // The default profile keeps the bare '__new__' key so an existing install's
+  // in-progress draft survives the upgrade.
+  const profile = getProfileForScopedKeys()
+
+  return !profile || profile === 'default' ? NEW_SESSION_DRAFT_KEY : `${NEW_SESSION_DRAFT_KEY}:${profile}`
+}
 
 const cloneDraft = (draft: SessionDraft): SessionDraft => ({
   attachments: draft.attachments.map(attachment => ({ ...attachment })),

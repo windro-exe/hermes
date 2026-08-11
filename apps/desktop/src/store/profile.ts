@@ -11,8 +11,13 @@ import {
   storedStringArray,
   storedStringRecord
 } from '@/lib/storage'
+// FORK: closing these on a profile switch mirrors what gateway-switch.ts already
+// does for a connection-mode switch — artifact and preview tabs reference the
+// previous backend's sessions and files.
+import { closeAllArtifactTabs } from '@/store/artifacts'
 import { $gateway, ensureGatewayForProfile, openGatewayForProfile } from '@/store/gateway'
-import { setConnection } from '@/store/session'
+import { clearSessionPreviewRegistry } from '@/store/preview'
+import { rehydrateProfileScopedSessionState, setConnection, setProfileForScopedKeys } from '@/store/session'
 import { resetStarmapGraph } from '@/store/starmap'
 import type { ProfileInfo } from '@/types/hermes'
 
@@ -175,12 +180,32 @@ $activeGatewayProfile.subscribe(value => {
   const key = normalizeProfileKey(value)
   setApiRequestProfile(key)
 
+  // FORK: point profile-scoped storage keys at this profile BEFORE anything below
+  // reads them. Set unconditionally, including on the first (no-change) call, so a
+  // boot straight into a non-default profile keys correctly from the start rather
+  // than reading the default profile's bucket.
+  setProfileForScopedKeys(key)
+
   if (_lastRoutedProfile !== null && _lastRoutedProfile !== key) {
     // Profile-scoped settings + the unified session list are now stale.
     // Narrowed so account/marketplace/onboarding caches don't refetch on
     // every profile switch.
     invalidateProfileScopedQueries()
     resetStarmapGraph()
+
+    // FORK: atoms seeded from storage at module load still hold the previous
+    // profile's values — re-read them now that the keys point somewhere else.
+    // Without this, $currentCwd keeps the old profile's folder and seeds new
+    // sessions and terminals there.
+    rehydrateProfileScopedSessionState()
+
+    // FORK: tabs referencing the previous profile's sessions and files must not
+    // survive the swap. gateway-switch.ts already does this for a connection-mode
+    // switch, with the comment "Artifact tabs reference sessions on the previous
+    // backend"; that reasoning applies verbatim here and the profile path was
+    // simply never wired to it.
+    closeAllArtifactTabs()
+    clearSessionPreviewRegistry()
   }
 
   _lastRoutedProfile = key

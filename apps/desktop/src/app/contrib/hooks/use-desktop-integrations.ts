@@ -78,7 +78,10 @@ export function useDesktopIntegrations({
     }
 
     if (!isOverlayView(appViewForPath(locationPathname))) {
-      setRememberedRoute(locationPathname)
+      // Profile passed explicitly: a session route is stored here and the restore
+      // below prefers it over the remembered session id, so a route remembered
+      // under the wrong profile reopens another profile's conversation.
+      setRememberedRoute(locationPathname, $activeGatewayProfile.get())
     }
   }, [locationPathname, routedSessionId])
 
@@ -96,7 +99,7 @@ export function useDesktopIntegrations({
     }
 
     restoredRef.current = true
-    const route = getRememberedRoute()
+    const route = getRememberedRoute($activeGatewayProfile.get())
 
     if (route && route !== NEW_CHAT_ROUTE && !isOverlayView(appViewForPath(route))) {
       navigate(route, { replace: true })

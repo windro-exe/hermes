@@ -1,5 +1,7 @@
 import { atom } from 'nanostores'
 
+import { $activeProfile } from '@/store/profile'
+
 import type { ComposerAttachment } from './composer'
 
 export interface QueuedPromptEntry {
@@ -7,6 +9,23 @@ export interface QueuedPromptEntry {
   text: string
   attachments: ComposerAttachment[]
   queuedAt: number
+  /**
+   * Profile this prompt was written in.
+   *
+   * Load-bearing, not bookkeeping. The queue is one flat localStorage map shared
+   * by every profile, and `migrateQueuedPrompts` re-homes entries whenever the
+   * active session key changes. A profile switch changes that key too, so
+   * without knowing which profile an entry belongs to the migration cannot tell
+   * "the backend bounced and re-minted an id for this conversation" (re-home)
+   * from "the user switched profile" (do not) — and a prompt written in profile B
+   * got sent in profile A's session instead.
+   *
+   * Optional for backward compatibility: entries persisted before this field
+   * existed load with `profile === undefined` and are treated as belonging to
+   * whatever profile is active, matching the old behaviour rather than silently
+   * discarding them.
+   */
+  profile?: string
 }
 
 type QueueState = Record<string, QueuedPromptEntry[]>
@@ -122,7 +141,10 @@ export const enqueueQueuedPrompt = (
     id: nextId(),
     text: payload.text,
     attachments: cloneAttachments(payload.attachments),
-    queuedAt: Date.now()
+    queuedAt: Date.now(),
+    // Stamped at write time so the entry stays bound to the profile the user
+    // wrote it in, even across a reload. See QueuedPromptEntry.profile.
+    profile: $activeProfile.get()
   }
 
   writeSession(sid, [...queueFor(sid), entry])
@@ -249,6 +271,16 @@ export const clearQueuedPrompts = (key: string | null | undefined) => {
  * resume can mint a fresh runtime session id for the *same* conversation; the
  * entries enqueued under the old id would otherwise be stranded under a key
  * nothing reads anymore. No-op unless both keys resolve and differ.
+ *
+ * **Only entries belonging to the active profile move.** The caller cannot tell
+ * a backend bounce from a profile switch — both change the active session key —
+ * so the decision is made here, per entry, from the profile stamped at enqueue.
+ *
+ * Without that filter, queueing a prompt in profile B while the model was busy
+ * and then switching to profile A re-homed the entry onto profile A's session
+ * and sent it there: it appeared in the wrong conversation and vanished from the
+ * one it was written for. Entries from another profile stay under their original
+ * key and drain normally when the user returns to that profile.
  */
 export const migrateQueuedPrompts = (fromKey: string | null | undefined, toKey: string | null | undefined): boolean => {
   const from = sidOf(fromKey)
@@ -258,14 +290,32 @@ export const migrateQueuedPrompts = (fromKey: string | null | undefined, toKey: 
     return false
   }
 
-  const pending = queueFor(from)
+  const all = queueFor(from)
+
+  if (all.length === 0) {
+    return false
+  }
+
+  // Entries written before `profile` existed load as undefined; treat them as
+  // belonging to the active profile so an upgrade does not strand them.
+  const active = $activeProfile.get()
+  const pending = all.filter(e => e.profile === undefined || e.profile === active)
+  const foreign = all.filter(e => !(e.profile === undefined || e.profile === active))
 
   if (pending.length === 0) {
     return false
   }
 
   const next = { ...$queuedPromptsBySession.get() }
-  delete next[from]
+
+  // Anything belonging to another profile must survive under the ORIGINAL key,
+  // not be dropped along with the migration.
+  if (foreign.length > 0) {
+    next[from] = foreign
+  } else {
+    delete next[from]
+  }
+
   next[to] = [...queueFor(to), ...pending]
 
   $queuedPromptsBySession.set(next)
@@ -274,8 +324,14 @@ export const migrateQueuedPrompts = (fromKey: string | null | undefined, toKey: 
   // The park is a property of the entries the user halted — it re-homes with
   // them. Without this, a backend bounce right after Stop would shed the park
   // and auto-send the exact prompts the user just held back.
+  //
+  // It only LEAVES the source when nothing stayed behind. Entries belonging to
+  // another profile are still parked, and clearing the source park would
+  // auto-send them the moment that profile becomes active again.
   if ($parkedQueueSessions.get()[from]) {
-    setParked(from, false)
+    if (foreign.length === 0) {
+      setParked(from, false)
+    }
     setParked(to, true)
   }
 

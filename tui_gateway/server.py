@@ -1275,6 +1275,26 @@ def _launch_configured_cwd() -> str | None:
         return None
 
 
+def truncation_confirmed(params: dict) -> bool:
+    """FORK: did the client explicitly confirm dropping session history?
+
+    ``prompt.submit`` with ``truncate_before_user_ordinal`` deletes every turn from
+    that point on and persists the loss via ``replace_messages`` — unrecoverable.
+    The original guard only refused ordinal 0 (total wipe), so a stale client
+    carrying a leftover NON-zero ordinal on an ordinary submit still silently
+    destroyed the tail of a transcript.
+
+    ``confirm_empty_truncate`` is accepted as well as ``confirm_truncate`` so
+    clients predating the newer flag keep working for the case they did handle.
+
+    Pure and public specifically so the decision is testable by calling it, rather
+    than by inspecting source or standing up a gateway.
+    """
+    return is_truthy_value(params.get("confirm_truncate")) or is_truthy_value(
+        params.get("confirm_empty_truncate")
+    )
+
+
 def _default_session_cwd() -> str:
     """Fallback cwd for a session with no explicit / stored / profile cwd.
 
@@ -10899,6 +10919,36 @@ def _(rid, params: dict) -> dict:
             if ordinal < 0 or ordinal >= len(user_indices):
                 return _err(rid, 4018, "target user message is no longer in session history")
             truncated = history[: user_indices[ordinal]]
+            # FORK: require an explicit confirmation for ANY truncation, not only
+            # the empty-transcript edge below. Predicate lives in
+            # `truncation_confirmed` so it is testable without booting a gateway.
+            #
+            # The old guard only caught ordinal 0. A stale client carrying a
+            # leftover NON-zero ordinal on an ordinary submit still silently
+            # dropped every turn from that point on, persisted via
+            # replace_messages — the same class of unrecoverable loss, just
+            # partial instead of total. Newer backends (0.20.0+) tightened this;
+            # ours had not.
+            #
+            # `confirm_empty_truncate` is accepted as satisfying it too, so a
+            # client that predates `confirm_truncate` keeps working for the case
+            # it did handle. Both flags are set by this repo's client.
+            if history and not truncation_confirmed(params):
+                logger.warning(
+                    "prompt.submit: REFUSED unconfirmed truncation of session %s "
+                    "(%d messages -> %d; ordinal=%d).",
+                    sid,
+                    len(history),
+                    len(truncated),
+                    ordinal,
+                )
+                return _err(
+                    rid,
+                    4029,
+                    "truncate_before_user_ordinal requires confirm_truncate=true; "
+                    "an ordinary prompt.submit must not drop session history "
+                    "(update your Hermes client if a rewind was intended)",
+                )
             # Stale clients can attach truncate_before_user_ordinal=0 to an
             # ordinary submit. That resolves to history[:0] == [] and
             # replace_messages() DELETEs every durable row — silent total

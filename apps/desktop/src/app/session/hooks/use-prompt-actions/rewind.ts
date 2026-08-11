@@ -31,6 +31,25 @@ type RequestGateway = <T = unknown>(method: string, params?: Record<string, unkn
  * that edge unless `confirm_empty_truncate` is set, so stale clients cannot
  * silently wipe a session via a leftover ordinal.
  */
+/**
+ * FORK: also sends `confirm_truncate: true` whenever an ordinal is present.
+ *
+ * Backends from 0.20.0 require an explicit confirmation for ANY truncation, not
+ * just the empty-transcript edge this client already handled. Against one, every
+ * restore / rewind / edit / regenerate failed with:
+ *
+ *   "truncate_before_user_ordinal requires confirm_truncate=true; an ordinary
+ *    prompt.submit must not drop session history"
+ *
+ * Sending it is honest rather than a bypass: every caller gets its ordinal from a
+ * deliberate rewind/restore/edit planner, and this function returns `{}` when the
+ * ordinal is undefined — so the field only ever appears when dropping history was
+ * the intent.
+ *
+ * Both flags are sent because they guard different things and different backends
+ * check different ones. Older gateways read params by name and ignore unknown
+ * keys, so the extra field is inert there.
+ */
 export function truncateSubmitParams(truncateOrdinal: number | undefined): Record<string, unknown> {
   if (truncateOrdinal === undefined) {
     return {}
@@ -38,6 +57,7 @@ export function truncateSubmitParams(truncateOrdinal: number | undefined): Recor
 
   return {
     truncate_before_user_ordinal: truncateOrdinal,
+    confirm_truncate: true,
     ...(truncateOrdinal === 0 ? { confirm_empty_truncate: true } : {})
   }
 }

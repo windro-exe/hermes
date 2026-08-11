@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+﻿import { act, cleanup, render, waitFor } from '@testing-library/react'
 import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,7 +36,7 @@ vi.mock('@/hermes', () => ({
 }))
 
 // The active id the desktop holds is the *runtime* session id from
-// session.create — deliberately distinct from the stored DB id here, because
+// session.create â€” deliberately distinct from the stored DB id here, because
 // that mismatch is the bug: the REST renameSession endpoint resolves against
 // the stored sessions table and 404s on a runtime id. session.title accepts
 // the runtime id directly.
@@ -232,7 +232,7 @@ describe('usePromptActions /title', () => {
 
     await handle!.submitText('/title New title')
 
-    // Routes through session.title with the runtime session id — NOT the slash
+    // Routes through session.title with the runtime session id â€” NOT the slash
     // worker (slash.exec) and NOT the REST endpoint. This is the path that
     // resolves the runtime id and persists reliably across platforms.
     expect(requestGateway).toHaveBeenCalledWith('session.title', {
@@ -357,7 +357,7 @@ describe('usePromptActions slash session targeting', () => {
       }
 
       if (method === 'slash.exec') {
-        return { output: '⊙ Goal (active, 1/20 turns): build a rocket' } as never
+        return { output: 'âŠ™ Goal (active, 1/20 turns): build a rocket' } as never
       }
 
       return {} as never
@@ -447,9 +447,9 @@ describe('usePromptActions /compress', () => {
         return {
           removed: 8,
           summary: {
-            headline: 'Compressed: 234 → 226 messages',
+            headline: 'Compressed: 234 â†’ 226 messages',
             noop: false,
-            token_line: 'Approx request size: ~285,727 → ~198,104 tokens'
+            token_line: 'Approx request size: ~285,727 â†’ ~198,104 tokens'
           }
         } as never
       }
@@ -470,7 +470,7 @@ describe('usePromptActions /compress', () => {
     await handle!.submitText('/compress')
 
     // The dedicated RPC is the TUI's path and has no slash-worker pipe
-    // timeout — and the call carries an LLM-sized client timeout instead of
+    // timeout â€” and the call carries an LLM-sized client timeout instead of
     // the 30s WS default, so a large session's compression can finish.
     expect(requestGateway).toHaveBeenCalledWith(
       'session.compress',
@@ -488,7 +488,7 @@ describe('usePromptActions /compress', () => {
       if (method === 'session.compress') {
         return {
           removed: 2,
-          summary: { headline: 'Compressed: 4 → 2 messages' },
+          summary: { headline: 'Compressed: 4 â†’ 2 messages' },
           messages: [
             { role: 'user', content: 'summarized context' },
             { role: 'assistant', content: 'sure, here is the summary' }
@@ -528,7 +528,7 @@ describe('usePromptActions /compress', () => {
     const requestGateway = vi.fn(async (method: string) => {
       if (method === 'session.compress') {
         return {
-          host_ack: { output: 'Compressed 4 → 2 messages' },
+          host_ack: { output: 'Compressed 4 â†’ 2 messages' },
           messages: [
             { role: 'user', content: 'compute-host summary' },
             { role: 'assistant', content: 'compute-host answer' }
@@ -553,9 +553,9 @@ describe('usePromptActions /compress', () => {
 
     const computeHostTexts = renderedSeedTexts(seeds)
     expect(computeHostTexts).toEqual(expect.arrayContaining(['compute-host summary', 'compute-host answer']))
-    expect(computeHostTexts.some(text => text.includes('Compressed 4 → 2 messages'))).toBe(true)
+    expect(computeHostTexts.some(text => text.includes('Compressed 4 â†’ 2 messages'))).toBe(true)
     expect($notifications.get()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ message: 'Compressed 4 → 2 messages' })])
+      expect.arrayContaining([expect.objectContaining({ message: 'Compressed 4 â†’ 2 messages' })])
     )
   })
 
@@ -618,7 +618,7 @@ describe('usePromptActions /compress', () => {
 
     const requestGateway = vi.fn(async (method: string) => {
       if (method === 'session.compress') {
-        throw new Error('session busy — /interrupt the current turn before /compress')
+        throw new Error('session busy â€” /interrupt the current turn before /compress')
       }
 
       return {} as never
@@ -729,7 +729,7 @@ describe('usePromptActions /compress', () => {
       await submitted
     })
 
-    // The foreground transcript + usage are unchanged — the late result only
+    // The foreground transcript + usage are unchanged â€” the late result only
     // updated session A's cache, not the active session B's.
     expect($messages.get()).toEqual([
       { id: 'foreground-b', parts: [textPart('session B transcript')], role: 'user', timestamp: 0 }
@@ -848,7 +848,7 @@ describe('usePromptActions exec fallback error reporting', () => {
     )
 
     // /debug still goes through exec (no dedicated RPC), so it exercises the
-    // slash.exec → command.dispatch fallback + error unmasking path.
+    // slash.exec â†’ command.dispatch fallback + error unmasking path.
     await handle!.submitText('/debug')
 
     // The dispatch fallback knowing nothing about /debug is routing noise;
@@ -984,7 +984,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
       if (method === 'slash.exec') {
         return {
           type: 'send',
-          notice: '⊙ Goal set. Starting now.',
+          notice: 'âŠ™ Goal set. Starting now.',
           message: 'write the implementation plan'
         } as never
       }
@@ -1024,12 +1024,12 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
       })
       .join('\n')
 
-    expect(renderedText).toContain('⊙ Goal set. Starting now.')
+    expect(renderedText).toContain('âŠ™ Goal set. Starting now.')
     expect(renderedText).not.toContain('/goal: no output')
   })
 
   it('queues the /goal kickoff instead of dropping it when the session is busy (#63352)', async () => {
-    // The backend sets the goal the moment slash.exec runs — dropping the
+    // The backend sets the goal the moment slash.exec runs â€” dropping the
     // returned kickoff message because busyRef was true left a goal the agent
     // never heard about. The busy path must park the kickoff on the composer
     // queue so the settle drain sends it.
@@ -1045,7 +1045,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
       if (method === 'slash.exec') {
         return {
           type: 'send',
-          notice: '⊙ Goal set (20-turn budget): ship the release notes',
+          notice: 'âŠ™ Goal set (20-turn budget): ship the release notes',
           message: 'ship the release notes'
         } as never
       }
@@ -1066,7 +1066,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
 
     await handle!.submitText('/goal ship the release notes')
 
-    // The kickoff must NOT submit mid-turn — and must NOT vanish either.
+    // The kickoff must NOT submit mid-turn â€” and must NOT vanish either.
     expect(calls.map(c => c.method)).toEqual(['slash.exec'])
 
     const queued = getQueuedPrompts(RUNTIME_SESSION_ID)
@@ -1084,7 +1084,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
 
     // The notice still renders, and the busy line reports a queue, not a demand
     // to /interrupt.
-    expect(renderedText).toContain('⊙ Goal set (20-turn budget): ship the release notes')
+    expect(renderedText).toContain('âŠ™ Goal set (20-turn budget): ship the release notes')
     expect(renderedText).toContain('queued')
 
     $queuedPromptsBySession.set({})
@@ -1094,8 +1094,8 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
     // `busyRef` is the FOREGROUND view's busy flag; a slash command runs against
     // the session `resolveTargetSessionId` picked, which is frequently not the
     // foreground one (tile, route rebind, freshly created session). A stale
-    // foreground `true` — e.g. left behind by a warm resume of a *different*,
-    // still-running session — parked the kickoff of an idle session's command
+    // foreground `true` â€” e.g. left behind by a warm resume of a *different*,
+    // still-running session â€” parked the kickoff of an idle session's command
     // on the queue and told the user "session busy" about a session that was
     // doing nothing.
     $queuedPromptsBySession.set({})
@@ -1122,7 +1122,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
 
     await handle!.submitText('/audit-only audit the session states')
 
-    // The target session is idle, so the command sends now — nothing queues.
+    // The target session is idle, so the command sends now â€” nothing queues.
     expect(calls).toContain('prompt.submit')
     expect(getQueuedPrompts(RUNTIME_SESSION_ID)).toEqual([])
 
@@ -1168,7 +1168,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
   })
 
   it('binds slash output and the busy queue to the TARGET session, not the foreground selection', async () => {
-    // A tile (⌘T tab, split pane) routes its slash commands through this hook
+    // A tile (âŒ˜T tab, split pane) routes its slash commands through this hook
     // with an explicit runtime id while the foreground selection names a
     // different conversation. Binding the output writer to the foreground
     // selection re-keyed the tile's cache entry onto the primary's stored
@@ -1204,7 +1204,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
     // Every transcript write lands on the tile's own stored session.
     expect(boundStoredIds).not.toHaveLength(0)
     expect(new Set(boundStoredIds)).toEqual(new Set([tileStoredId]))
-    // …and the kickoff queues against the tile, never the foreground chat.
+    // â€¦and the kickoff queues against the tile, never the foreground chat.
     expect(getQueuedPrompts(tileStoredId).map(entry => entry.text)).toEqual(['run it in the tab'])
     expect(getQueuedPrompts('primary-stored')).toEqual([])
 
@@ -1213,9 +1213,9 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
   })
 
   it("sends a skill's kickoff into the TAB that invoked it, not the foreground chat", async () => {
-    // `/work` in a fresh ⌘T tab: slash.exec returns a skill dispatch whose
+    // `/work` in a fresh âŒ˜T tab: slash.exec returns a skill dispatch whose
     // `message` is the kickoff prompt. The dispatcher resolved the tab as its
-    // target, printed "⚡ loading skill" there — then submitted the kickoff
+    // target, printed "âš¡ loading skill" there â€” then submitted the kickoff
     // with no target at all, so submit re-resolved from activeSessionIdRef and
     // fired it as a user message into whatever conversation was on screen.
     const tabRuntimeId = 'tab-runtime'
@@ -1271,7 +1271,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
       if (method === 'slash.exec') {
         return {
           type: 'send',
-          notice: '⊙ Goal set: build the whole thing',
+          notice: 'âŠ™ Goal set: build the whole thing',
           message: 'build the whole thing end to end with tests'
         } as never
       }
@@ -1333,7 +1333,7 @@ describe('usePromptActions slash.exec dispatch payloads', () => {
 
     await handle!.submitText('/goal Write a Python script\nthat prints Hello World')
 
-    // The newline lives in the arg — the command still reaches the gateway
+    // The newline lives in the arg â€” the command still reaches the gateway
     // whole, exactly as the CLI and Telegram handle it.
     expect(calls.map(c => c.method)).toEqual(['slash.exec', 'prompt.submit'])
     expect(calls[0]?.params).toEqual({
@@ -1485,7 +1485,7 @@ describe('usePromptActions submit / queue drain semantics', () => {
     await handle!.submitText('hello after a stop')
 
     // The optimistic seed must reset interrupted:false even though the prior
-    // session state had interrupted:true — otherwise the message stream drops
+    // session state had interrupted:true â€” otherwise the message stream drops
     // every delta of this brand-new turn.
     expect(seeds.length).toBeGreaterThan(0)
     expect(seeds.every(s => s.interrupted === false)).toBe(true)
@@ -1534,7 +1534,7 @@ describe('usePromptActions submit / queue drain semantics', () => {
   })
 
   it('a fromQueue drain sends even when busyRef is still true on the settle edge', async () => {
-    // busyRef lags $busy by one effect tick on the busy→false settle edge, so a
+    // busyRef lags $busy by one effect tick on the busyâ†’false settle edge, so a
     // drained queue send would otherwise hit the busy guard and silently no-op.
     const busyRef = { current: true }
     const requestGateway = vi.fn(async () => ({}) as never)
@@ -1607,7 +1607,7 @@ describe('usePromptActions submit / queue drain semantics', () => {
     // The cross-session leak: a background drain fires with sessionId=null
     // (the stored session's runtime was reaped by the gateway). Without the
     // guard, `null ?? activeSessionIdRef.current` falls back to whichever
-    // runtime id the foreground happens to hold — landing the queued prompt
+    // runtime id the foreground happens to hold â€” landing the queued prompt
     // in the chat the user is currently viewing, NOT the session that owns
     // the queue entry. The drain must instead go through session.resume to
     // rebind the correct runtime before submitting.
@@ -1948,6 +1948,7 @@ describe('usePromptActions restoreToMessage', () => {
         session_id: RUNTIME_SESSION_ID,
         text: 'first prompt',
         truncate_before_user_ordinal: 0,
+        confirm_truncate: true,
         confirm_empty_truncate: true
       },
       1_800_000
@@ -2016,6 +2017,7 @@ describe('usePromptActions restoreToMessage', () => {
         session_id: RUNTIME_SESSION_ID,
         text: 'first prompt',
         truncate_before_user_ordinal: 0,
+        confirm_truncate: true,
         confirm_empty_truncate: true
       },
       1_800_000
@@ -2062,6 +2064,7 @@ describe('usePromptActions restoreToMessage', () => {
         session_id: RUNTIME_SESSION_ID,
         text: 'first prompt',
         truncate_before_user_ordinal: 0,
+        confirm_truncate: true,
         confirm_empty_truncate: true
       },
       1_800_000
@@ -2089,7 +2092,7 @@ describe('usePromptActions file attachment sync', () => {
 
   it('uploads file bytes via file.attach on a remote gateway and submits the rewritten ref', async () => {
     // Remote gateway can't read the client-disk path, so the desktop must upload
-    // the bytes and submit the workspace-relative ref the gateway hands back —
+    // the bytes and submit the workspace-relative ref the gateway hands back â€”
     // not the original /Users/... path (which would dead-end as "outside the
     // allowed workspace").
     $connection.set({ mode: 'remote' } as never)
@@ -2140,7 +2143,7 @@ describe('usePromptActions file attachment sync', () => {
     // Submit-layer contract: only attachments that carry a `path` are upload
     // candidates. A path-less ref (an @-mention/context ref or pasted text)
     // has no bytes to send, so syncAttachments leaves it untouched and the ref
-    // reaches the gateway as-is — correct for workspace-relative refs.
+    // reaches the gateway as-is â€” correct for workspace-relative refs.
     //
     // The MahmoudR drag-drop bug (a Finder PDF that became a local-path text
     // ref in remote mode) is fixed upstream at the DROP layer: OS drops now
@@ -2157,7 +2160,7 @@ describe('usePromptActions file attachment sync', () => {
       id: 'file:devis',
       kind: 'file',
       label: 'DEVIS_signed.pdf',
-      // NOTE: no `path` field — only the pre-baked local @file: ref.
+      // NOTE: no `path` field â€” only the pre-baked local @file: ref.
       refText: '@file:`/Users/mahmoud/Downloads/DEVIS_signed.pdf`'
     }
 
@@ -2177,7 +2180,7 @@ describe('usePromptActions file attachment sync', () => {
     const ok = await handle!.submitText('read this file', { attachments: [pathlessRef] })
 
     expect(ok).toBe(true)
-    // No path → no file.attach, no byte read: the ref passes through unchanged.
+    // No path â†’ no file.attach, no byte read: the ref passes through unchanged.
     expect(calls.map(c => c.method)).toEqual(['prompt.submit'])
     expect(readFileDataUrl).not.toHaveBeenCalled()
     expect(calls[0]?.params?.text).toContain('@file:`/Users/mahmoud/Downloads/DEVIS_signed.pdf`')
@@ -2207,7 +2210,7 @@ describe('usePromptActions file attachment sync', () => {
 
     expect(ok).toBe(true)
     expect(calls[0]?.method).toBe('file.attach')
-    // Local mode sends no data_url — the gateway shares this disk.
+    // Local mode sends no data_url â€” the gateway shares this disk.
     expect(calls[0]?.params).not.toHaveProperty('data_url')
     expect(calls[1]).toEqual({
       method: 'prompt.submit',
@@ -2264,7 +2267,7 @@ describe('usePromptActions eager-upload races', () => {
     )
     await waitFor(() => expect(handle).not.toBeNull())
 
-    // Drop a file → the eager effect fires file.attach and blocks on it.
+    // Drop a file â†’ the eager effect fires file.attach and blocks on it.
     $composerAttachments.set([{ id: 'file:doc.pdf', kind: 'file', label: 'doc.pdf', path: '/Users/me/doc.pdf' }])
     await waitFor(() => expect(methods.filter(m => m === 'file.attach').length).toBe(1))
 
@@ -2330,7 +2333,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
     const ok = await handle!.submitText('message after wake')
 
     expect(ok).toBe(true)
-    // First submit (stale id) → session.resume (stored id) → retry submit (fresh id).
+    // First submit (stale id) â†’ session.resume (stored id) â†’ retry submit (fresh id).
     expect(calls.map(c => c.method)).toEqual(['prompt.submit', 'session.resume', 'prompt.submit'])
     expect(calls[1]?.params).toEqual({ session_id: STORED_SESSION_ID, source: 'desktop' })
     expect(calls[2]?.params).toEqual({ session_id: RECOVERED_SESSION_ID, text: 'message after wake' })
@@ -2338,7 +2341,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
 
   // #67603 (second symptom): a recovery resume must re-register on the session's
   // OWNING profile. Resuming on whichever profile is live forks the conversation
-  // into the wrong profile's DB — the session then appears under both profiles.
+  // into the wrong profile's DB â€” the session then appears under both profiles.
   it('carries the owning profile from the cache into the recovery resume', async () => {
     setSessions(() => [sessionInfo({ id: STORED_SESSION_ID, profile: 'work' })])
 
@@ -2384,7 +2387,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
   // The session lives on another profile and is outside the paginated sidebar
   // cache: resolve it by id across profiles rather than resuming profile-blind.
   it('resolves the owning profile across profiles when the session is not cached', async () => {
-    // module-factory vi.fn is not reset by restoreAllMocks — reset explicitly in
+    // module-factory vi.fn is not reset by restoreAllMocks â€” reset explicitly in
     // the finally below so this resolved value never leaks into sibling tests.
     setSessions(() => [])
     vi.mocked(getSession).mockResolvedValue(sessionInfo({ id: STORED_SESSION_ID, profile: 'work' }))
@@ -2608,7 +2611,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
     )
 
     // With a null stored ref, the `&& selectedStoredSessionIdRef.current` guard
-    // short-circuits — no resume is attempted and the error surfaces normally.
+    // short-circuits â€” no resume is attempted and the error surfaces normally.
     expect(await handle!.submitText('message')).toBe(false)
     expect(calls).not.toContain('session.resume')
   })
@@ -2616,7 +2619,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
   it('recovers via session.resume when prompt.submit TIMES OUT and a stored session is selected (#55578)', async () => {
     // A starved gateway loop rejects with "request timed out: prompt.submit".
     // With a stored session selected, that must recover exactly like
-    // "session not found" — resume + retry — not surface an error that leaves
+    // "session not found" â€” resume + retry â€” not surface an error that leaves
     // activeSessionId null and lets the next send mint a new session.
     const calls: { method: string; params?: Record<string, unknown> }[] = []
     let submitAttempts = 0
@@ -2666,7 +2669,7 @@ describe('usePromptActions sleep/wake session recovery', () => {
     // The exact split path from #55578 symptom (b): the runtime binding is
     // gone (orphan-reaped / cleared by a timeout) but a stored session is
     // still selected in the sidebar. A follow-up submit must continue that
-    // conversation via session.resume — createBackendSessionForSend would
+    // conversation via session.resume â€” createBackendSessionForSend would
     // silently fork the user's chat in two.
     const calls: { method: string; params?: Record<string, unknown> }[] = []
     const createBackendSessionForSend = vi.fn(async () => 'brand-new-session-WRONG')
@@ -2962,7 +2965,7 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     // Exact #54527 failure: user submits in Session A while its runtime binding
     // is gone; before resume returns they switch to Session B. Without a pinned
     // context the resumed runtime id belongs to B and A's text lands in the
-    // wrong chat — permanently lost from A.
+    // wrong chat â€” permanently lost from A.
     let releaseResume: () => void = () => {}
     const calls: { method: string; params?: Record<string, unknown> }[] = []
 
@@ -3015,9 +3018,9 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
 
   it('does not false-positive-abort when the session has rotated via compression (lineage root vs tip)', async () => {
     // The composer keys drafts/attachments on the DURABLE lineage root
-    // (resolveComposerSessionKey / sessionPinId — survives auto-compression
+    // (resolveComposerSessionKey / sessionPinId â€” survives auto-compression
     // tip rotation), but selectedStoredSessionIdRef tracks the CURRENT TIP.
-    // For any session that has compressed at least once, root !== tip — if
+    // For any session that has compressed at least once, root !== tip â€” if
     // composerScope is compared against the raw tip, every legitimate submit
     // into that session would look like drift.
     const ROOT_ID = 'stored-root-original'
@@ -3044,7 +3047,7 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     )
 
     // The composer's scope is the lineage root (what resolveComposerSessionKey
-    // actually returns for this session) — a legitimate, non-drifted submit.
+    // actually returns for this session) â€” a legitimate, non-drifted submit.
     const ok = await handle!.submitText('message into the rotated session', { composerScope: ROOT_ID })
 
     expect(ok).toBe(true)
@@ -3162,7 +3165,7 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     })
   })
 
-  it('submits the first prompt of a new chat — the create pipeline re-homing selection/route is not user drift', async () => {
+  it('submits the first prompt of a new chat â€” the create pipeline re-homing selection/route is not user drift', async () => {
     // Regression for the #54527 guard breaking every NEW chat: on a fresh draft
     // (no stored session, no runtime session) createBackendSessionForSend
     // legitimately sets selectedStoredSessionIdRef + navigates to the new
@@ -3283,7 +3286,7 @@ describe('usePromptActions new-chat first-send delivery (#63078)', () => {
     // Mirror the real session creator: session.create selects the persisted
     // row and replaces the new-chat route with the created session's URL
     // BEFORE returning. The submit pipeline must adopt that intentional
-    // transition as its new pinned target — not mistake it for the user
+    // transition as its new pinned target â€” not mistake it for the user
     // switching conversations and stop before prompt.submit.
     const createBackendSessionForSend = vi.fn(async (preview?: null | string) => {
       expect(preview).toBe('first message of a new chat')
@@ -3321,7 +3324,7 @@ describe('usePromptActions new-chat first-send delivery (#63078)', () => {
     expect(await handle!.submitText('first message of a new chat')).toBe(true)
     expect(createBackendSessionForSend).toHaveBeenCalledTimes(1)
     // The FULL RPC transcript: exactly one prompt.submit, addressed to the
-    // created runtime session, carrying the user's text — no session.resume
+    // created runtime session, carrying the user's text â€” no session.resume
     // detour and, critically, no silent drop before the submit.
     expect(calls).toEqual([
       {
@@ -3336,7 +3339,7 @@ describe('usePromptActions new-chat first-send delivery (#63078)', () => {
     // the OLD new-chat route to the submit continuation for a beat, committing
     // the created session's URL only before the next await settles. Neither
     // route snapshot (stale '/', then the late-committed session route) is a
-    // user switch — both are the pipeline's own transition and the first
+    // user switch â€” both are the pipeline's own transition and the first
     // prompt must still reach the gateway.
     const activeSessionIdRef: MutableRefObject<string | null> = { current: null }
     const selectedStoredSessionIdRef: MutableRefObject<string | null> = { current: null }
@@ -3461,7 +3464,7 @@ describe('usePromptActions new-chat first-send delivery (#63078)', () => {
 
     // selectSidebarItem calls navigate() first. The routed effect has not yet
     // entered resumeSession(), so the selected-session ref still points at the
-    // just-created session when attachment sync settles — the route move to a
+    // just-created session when attachment sync settles â€” the route move to a
     // DIFFERENT chat must abort on its own.
     routeToken = '/sidebar-target::'
     releaseAttach()
@@ -3475,7 +3478,7 @@ describe('usePromptActions new-chat first-send delivery (#63078)', () => {
     // The post-create re-baseline (adopting the created chat as the pinned
     // target) must not mask a REAL switch later in the pipeline: the user
     // clicks a different session after createBackendSessionForSend lands but
-    // before attachment sync settles — selection AND route both move to the
+    // before attachment sync settles â€” selection AND route both move to the
     // other chat, and the drift check at the post-attachments boundary must
     // abort rather than deliver the text into whichever chat won the race.
     const activeSessionIdRef: MutableRefObject<string | null> = { current: null }
@@ -3571,7 +3574,7 @@ describe('usePromptActions busy-gateway churn tolerance (#64327)', () => {
     // per-minute cron sessions, or a messaging surface active, the selected
     // stored id gets null-reset by gateway/profile reconnects and overlays
     // park state in location.search/hash. None of that is the user changing
-    // chats — a send from a second chat must ride through it and reach
+    // chats â€” a send from a second chat must ride through it and reach
     // prompt.submit instead of silently aborting.
     let releaseResume: () => void = () => {}
     const calls: { method: string; params?: Record<string, unknown> }[] = []
@@ -3612,7 +3615,7 @@ describe('usePromptActions busy-gateway churn tolerance (#64327)', () => {
     const submitting = handle!.submitText('send from a second chat on a busy gateway')
     await waitFor(() => expect(calls.some(c => c.method === 'session.resume')).toBe(true))
 
-    // Programmatic churn while resume is in flight — NOT user switches:
+    // Programmatic churn while resume is in flight â€” NOT user switches:
     // a gateway/profile reconnect null-resets the selection...
     selectedStoredSessionIdRef.current = null
     // ...a background event retargets the active runtime ref (#47709 class)...
@@ -3691,8 +3694,8 @@ describe('usePromptActions eager attachment upload (drop-time)', () => {
 
   it('uploads a dropped file the moment it lands (active session) and rewrites the chip with the gateway ref', async () => {
     // A Finder drop adds a chip with a local path but no attachedSessionId. With
-    // a session already open, the hook should stage it right away — so the send
-    // is instant and the card can show a spinner while bytes upload — instead of
+    // a session already open, the hook should stage it right away â€” so the send
+    // is instant and the card can show a spinner while bytes upload â€” instead of
     // waiting for submit.
     $connection.set({ mode: 'remote' } as never)
     const readFileDataUrl = vi.fn(async () => 'data:application/pdf;base64,JVBERi0=')
@@ -3831,7 +3834,7 @@ describe('uploadComposerAttachment remote read failures', () => {
 })
 
 // The actions bag is a STABLE ref that wiring.tsx mutates in place
-// (Object.assign), and the pane surfaces are memoized on that stable ref — so a
+// (Object.assign), and the pane surfaces are memoized on that stable ref â€” so a
 // surface does NOT re-render when the active session changes and its props keep
 // holding whichever `usePromptActions` closure was current when it last
 // rendered. `activeSessionIdRef` is therefore the authority (mirrored during
@@ -3873,7 +3876,7 @@ describe('usePromptActions stale-closure session routing', () => {
   }
 
   // Renders with `activeSessionId` (the prop) pinned to session A, then moves
-  // the ref to session B — the exact split a memoized surface holds after the
+  // the ref to session B â€” the exact split a memoized surface holds after the
   // user switches chats. Every action must target B.
   //
   // The rewind/reload planners read the GLOBAL `$messages` store (the view
@@ -3916,7 +3919,7 @@ describe('usePromptActions stale-closure session routing', () => {
     await handle.redirectPrompt('actually use Postgres')
 
     // A redirect reaches the model mid-turn. Sent to the stale session, the
-    // correction lands in a conversation the user is no longer looking at —
+    // correction lands in a conversation the user is no longer looking at â€”
     // this is the observed "session suddenly working on another chat's task".
     expect(requestGateway).toHaveBeenCalledWith('session.redirect', {
       session_id: RUNTIME_SESSION_B,

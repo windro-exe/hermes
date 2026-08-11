@@ -57,9 +57,27 @@ MODELS: tuple[ModelInfo, ...] = (
     ModelInfo("minimax-m2.5", "MiniMax M2.5", DEFAULT_CONTEXT, DEFAULT_OUTPUT, measured=False),
     ModelInfo("minimax-m2.1", "MiniMax M2.1", DEFAULT_CONTEXT, DEFAULT_OUTPUT, measured=False),
     ModelInfo("qwen3-coder-next", "Qwen3 Coder Next", DEFAULT_CONTEXT, DEFAULT_OUTPUT, measured=False),
-    # Server-side router. Listed last because which model answers is opaque,
-    # which makes context accounting unreliable.
-    ModelInfo("auto", "Auto (Kiro routes)", DEFAULT_CONTEXT, DEFAULT_OUTPUT, measured=False),
+    # Server-side router: Kiro picks the model, and it does NOT disclose which.
+    # `modelId` in the response echoes back "auto" rather than the resolved model
+    # (verified against the live service), so there is no way to log or attribute
+    # the actual model from our side.
+    #
+    # The context window IS measurable, and 1M is measured, not assumed. Method:
+    # send a prompt, then the same prompt plus ~4000 filler tokens, and divide the
+    # added tokens by the delta in contextUsagePercentage. Calibrated on two known
+    # models first — claude-sonnet-4.5 came out at 199,950 against a catalog 200,000
+    # and claude-opus-4.6 at 999,750 against 1,000,000, both 0% error — then applied
+    # to auto, which gave 999,750. Its per-call overhead (0.411% for a trivial
+    # prompt) also matches opus-4.6's (0.417%) rather than sonnet-4.5's (2.053%).
+    #
+    # This was DEFAULT_CONTEXT (200,000) and that mattered: usage estimation divides
+    # by this number, so Hermes believed the context was 5x fuller than it was and
+    # would have triggered compression far too early.
+    #
+    # Caveat: a router's target can change server-side at any time, and if Kiro ever
+    # routes to a smaller model this number becomes an over-estimate — the direction
+    # that fails requests rather than degrading them. Re-measure if behaviour shifts.
+    ModelInfo("auto", "Auto (Kiro routes)", 1_000_000, 128_000),
 )
 
 _BY_ID = {m.id: m for m in MODELS}

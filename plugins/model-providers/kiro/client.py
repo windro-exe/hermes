@@ -205,5 +205,16 @@ def list_models(credential: ResolvedCredential, *, region: str = "", timeout: fl
                     if isinstance(value, str) and value:
                         ids.append(value)
             if ids:
-                return ids
+                # Filtered HERE rather than at the call sites: this is the single
+                # funnel for the live list, feeding both providers' fetch_models
+                # and the proxy's /v1/models route. `auto` is excluded because it
+                # will not say what it routed to — see catalog.HIDDEN_MODEL_IDS.
+                from .catalog import visible_model_ids
+
+                visible = visible_model_ids(ids)
+
+                # Returning None rather than an empty list matters: callers treat
+                # None as "fetch failed, use the static catalog", where an empty
+                # list would show an empty picker.
+                return visible or None
     return None

@@ -91,7 +91,9 @@ class TestProfile:
         ids = list(profile.fallback_models)
         assert len(ids) >= 11
         assert "claude-opus-5" in ids
-        assert "auto" in ids
+        # `auto` was asserted here originally. It is now deliberately hidden — see
+        # TestCatalog.test_auto_is_hidden.
+        assert "auto" not in ids
 
     def test_max_tokens_known_and_unknown(self, profile):
         assert profile.get_max_tokens("claude-opus-5") == 128_000
@@ -602,6 +604,85 @@ class TestCatalog:
     def test_default_model_is_first(self):
         catalog = _mod("catalog")
         assert catalog.default_model() == catalog.static_model_ids()[0]
+
+    def test_auto_is_hidden(self):
+        """`auto` is Kiro's router and will not say what it routed to.
+
+        `modelId` in the response echoes back "auto" (verified live), so cost and
+        quality cannot be attributed. This fork does its own routing instead.
+        """
+        catalog = _mod("catalog")
+        assert "auto" in catalog.HIDDEN_MODEL_IDS
+        assert "auto" not in catalog.static_model_ids()
+
+    def test_hidden_ids_are_filtered_from_a_live_list(self):
+        """Omitting it from MODELS is NOT enough — ListAvailableModels returns it,
+        so a live catalog fetch would put it straight back in the picker."""
+        catalog = _mod("catalog")
+        assert catalog.visible_model_ids(["claude-opus-5", "auto", "glm-5"]) == [
+            "claude-opus-5",
+            "glm-5",
+        ]
+
+    def test_visible_model_ids_trims_and_dedupes(self):
+        catalog = _mod("catalog")
+        assert catalog.visible_model_ids([" claude-opus-5 ", "claude-opus-5", "", "auto"]) == [
+            "claude-opus-5"
+        ]
+
+    def test_live_list_filters_hidden_ids(self, monkeypatch):
+        """The filter lives in client.list_models, the single funnel feeding both
+        providers' fetch_models and the proxy's /v1/models route."""
+        import json as _json
+        import io
+
+        client = _mod("client")
+        auth = _mod("auth")
+
+        payload = _json.dumps({"models": [{"modelId": "auto"}, {"modelId": "claude-opus-5"}]})
+
+        class _Resp(io.BytesIO):
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(
+            client.urllib.request, "urlopen", lambda *a, **k: _Resp(payload.encode())
+        )
+        credential = auth.ResolvedCredential(token="ksk_x", source="explicit")
+
+        assert client.list_models(credential, region="us-east-1") == ["claude-opus-5"]
+
+    def test_an_all_hidden_response_reads_as_failure_not_empty(self, monkeypatch):
+        """None means "use the static catalog"; an empty list would show an empty
+        picker."""
+        import json as _json
+        import io
+
+        client = _mod("client")
+        auth = _mod("auth")
+
+        class _Resp(io.BytesIO):
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        monkeypatch.setattr(
+            client.urllib.request,
+            "urlopen",
+            lambda *a, **k: _Resp(_json.dumps({"models": ["auto"]}).encode()),
+        )
+        credential = auth.ResolvedCredential(token="ksk_x", source="explicit")
+
+        assert client.list_models(credential, region="us-east-1") is None
 
 
 # --------------------------------------------------------------------------

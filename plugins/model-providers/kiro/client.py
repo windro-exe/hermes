@@ -42,7 +42,26 @@ _UA = (
     "api/codewhispererstreaming#1.0.27 m/E hermes-kiro"
 )
 
+# Timeout for short request/response calls (region probe, ListAvailableModels).
 _CONNECT_TIMEOUT = 30.0
+
+#: Timeout for a streaming chat call.
+#:
+#: urllib applies `timeout` to EVERY socket operation, not to the request as a
+#: whole, so this is effectively an inactivity limit: it only trips when no bytes
+#: arrive for this long. 30s was far too tight — measured turns at ~123K input
+#: took 29.2s, 36.3s and more before their first bytes, so real calls were being
+#: killed mid-flight and surfaced as:
+#:
+#:   HTTP 500: The read operation timed out
+#:   HTTP 502: Kiro API error 0: could not reach the Kiro endpoint: The read
+#:             operation timed out
+#:
+#: A large value is safe precisely because it is per-read, not total: a genuinely
+#: dead connection still fails after this long, while a slow-thinking model on a
+#: full context window is no longer cut off.
+_STREAM_READ_TIMEOUT = 300.0
+
 _STREAM_CHUNK = 16384
 
 # Cached region probe result, keyed by nothing: it is a property of the account,
@@ -129,7 +148,7 @@ def stream_chat(
     body: dict[str, Any],
     *,
     region: str = "",
-    timeout: float = _CONNECT_TIMEOUT,
+    timeout: float = _STREAM_READ_TIMEOUT,
 ) -> Iterator[bytes]:
     """POST a chat request and yield raw response bytes as they arrive.
 

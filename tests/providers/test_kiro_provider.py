@@ -320,6 +320,62 @@ class TestInferenceWiring:
         assert exc.value.code == "kiro_not_installed"
 
 
+class TestStreamTimeout:
+    """A streaming chat call must tolerate a long silence before first bytes.
+
+    urllib applies `timeout` to every socket operation, not the whole request, so
+    the value is effectively an inactivity limit. It was 30s, and measured turns at
+    ~123K input took 29.2s and 36.3s before responding — so real calls were killed
+    mid-flight and surfaced as "HTTP 500: The read operation timed out" and
+    "HTTP 502: ... could not reach the Kiro endpoint: The read operation timed out".
+    """
+
+    def test_stream_default_is_the_long_timeout(self):
+        import inspect
+
+        client = _mod("client")
+
+        default = inspect.signature(client.stream_chat).parameters["timeout"].default
+        assert default == client._STREAM_READ_TIMEOUT
+        assert default != client._CONNECT_TIMEOUT
+
+    def test_stream_timeout_survives_a_slow_model(self):
+        """Must exceed the slowest observed first-byte latency by a wide margin."""
+        client = _mod("client")
+
+        # 36.3s was measured on a real 123K-token turn; a limit anywhere near that
+        # kills legitimate calls.
+        assert client._STREAM_READ_TIMEOUT >= 120.0
+
+    def test_short_calls_keep_the_short_timeout(self):
+        """Region probe and model listing must NOT wait minutes on a dead endpoint."""
+        import inspect
+
+        client = _mod("client")
+
+        assert inspect.signature(client.list_models).parameters["timeout"].default <= 60.0
+        assert inspect.signature(client.probe_region).parameters["timeout"].default <= 60.0
+
+    def test_stream_passes_its_timeout_to_urlopen(self, monkeypatch):
+        """The value has to reach the socket, not just sit in a constant."""
+        client = _mod("client")
+        auth = _mod("auth")
+
+        seen: dict = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["timeout"] = timeout
+            raise RuntimeError("stop here — only the timeout matters")
+
+        monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
+        credential = auth.ResolvedCredential(token="ksk_x", source="explicit")
+
+        with pytest.raises(Exception):
+            list(client.stream_chat(credential, {"conversationState": {}}, region="us-east-1"))
+
+        assert seen["timeout"] == client._STREAM_READ_TIMEOUT
+
+
 class TestProxyPortCollision:
     """A silent port fallback guarantees a confusing 401.
 

@@ -1275,6 +1275,29 @@ def _launch_configured_cwd() -> str | None:
         return None
 
 
+def _auto_projects_enabled() -> bool:
+    """FORK: should sessions be auto-grouped into synthesised project folders?
+
+    Off by default. A session that belongs to no explicit project should read as a
+    session, not as a folder — but ``project_tree`` tiers 2 and 3 invented one from
+    any session's git repo root, and tier 3 even from a disk scan of repos with no
+    sessions at all. Running a single session inside a checkout was enough to make
+    a permanent sidebar entry, and clearing it meant editing the session's stored
+    cwd by hand.
+
+    Explicit projects are unaffected. Set ``projects.auto_projects: true`` to get
+    the old grouping back.
+    """
+    try:
+        cfg = _load_cfg() or {}
+        projects_cfg = cfg.get("projects")
+        if not isinstance(projects_cfg, dict):
+            return False
+        return is_truthy_value(projects_cfg.get("auto_projects"))
+    except Exception:
+        return False
+
+
 def truncation_confirmed(params: dict) -> bool:
     """FORK: did the client explicitly confirm dropping session history?
 
@@ -14508,6 +14531,7 @@ def _build_project_tree(
         is_junk_root=_is_repo_junk,
         is_junk_cwd=_is_session_cwd_junk,
         exists=_dir_exists_cached,
+        auto_projects=_auto_projects_enabled(),
     )
     return tree, active_id
 

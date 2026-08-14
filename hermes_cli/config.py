@@ -5825,6 +5825,12 @@ _EXTRA_KNOWN_ROOT_KEYS = {
     "video_gen",         # video-generation provider config (agent/video_gen_registry.py)
     "plugins",           # plugin enable/disable lists (hermes_cli/plugins_cmd.py)
     "smart_model_routing",   # written by the setup wizard (hermes_cli/setup.py)
+    # FORK. `projects.auto_projects` (default false) suppresses the synthesised
+    # project folders that project_tree builds in tiers 2 and 3 — one from any
+    # unowned session's git repo root, one from a disk scan of repos with no
+    # sessions at all. A session with no explicit project should read as a session,
+    # not as a folder. Set it true to restore the old auto-grouping.
+    "projects",
     "platform_toolsets",     # written by the setup wizard (hermes_cli/setup.py)
     "known_plugin_toolsets", # written/read by hermes_cli/tools_config.py toolset-save flow
     "session_reset",         # top-level form read by gateway/config.py + setup

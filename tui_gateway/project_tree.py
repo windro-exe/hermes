@@ -534,6 +534,7 @@ def build_tree(
     is_junk_root: Optional[Callable[[str], bool]] = None,
     is_junk_cwd: Optional[Callable[[str], bool]] = None,
     exists: Optional[Exists] = None,
+    auto_projects: bool = True,
 ) -> dict:
     """Build the authoritative project tree.
 
@@ -554,6 +555,16 @@ def build_tree(
     ``hydrate`` is False (overview), lane ``sessions`` arrays are emptied but
     every count is preserved and each project carries up to ``preview_limit``
     ``previewSessions``. When True (drill-in), lanes carry full session rows.
+
+    FORK: ``auto_projects=False`` suppresses tiers 2 and 3 — the projects nobody
+    created. Tier 2 synthesises a project from any unowned session's git repo root,
+    and tier 3 goes further and invents one from a disk/history scan for repos with
+    no sessions at all. The result is that merely running a session inside a
+    checkout silently produces a folder in the sidebar.
+
+    With it off, a session that belongs to no explicit project is just a session
+    and stays in flat Recents (it is simply left out of ``scoped_session_ids``).
+    Explicit, user-created projects in tier 1 are unaffected either way.
     """
     active_projects = [p for p in projects if not p.get("archived")]
     _junk = is_junk_root or (lambda _root: False)
@@ -608,6 +619,10 @@ def build_tree(
     # root, then fall back to the session cwd for historical/non-git workspaces.
     # The pre-Projects desktop grouped every non-empty cwd; keeping that fallback
     # prevents upgrades from flattening those sessions into Recents.
+    #
+    # FORK: skipped entirely when auto_projects is off. Flattening into Recents is
+    # the desired outcome, not a regression to guard against — a session with no
+    # project should read as a session, not as a folder.
     by_auto_root: dict[str, dict] = {}
 
     def _add_auto(root: str, session: dict) -> None:
@@ -617,7 +632,7 @@ def build_tree(
         bucket = by_auto_root.setdefault(key, {"root": root, "sessions": []})
         bucket["sessions"].append(session)
 
-    for session in unowned:
+    for session in unowned if auto_projects else ():
         root = _session_repo_root(session, resolve)
         if root:
             # A real git root uses the stricter repo policy. Do not reinterpret a
@@ -679,7 +694,11 @@ def build_tree(
 
     # Tier 3: repos discovered from full history / disk scan with no loaded
     # sessions, folded to their common root and not owned by an explicit project.
-    for repo in discovered_repos or []:
+    #
+    # FORK: also gated on auto_projects. This tier is the more aggressive of the
+    # two — it mints a folder for a repo with NO sessions in it at all, purely
+    # because the repo exists on disk.
+    for repo in (discovered_repos or []) if auto_projects else ():
         raw_root = (repo.get("root") or "").strip()
         if not raw_root:
             continue

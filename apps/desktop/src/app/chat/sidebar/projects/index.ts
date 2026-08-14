@@ -1,8 +1,11 @@
 // Public surface of the project/worktree sidebar, consumed by the sidebar root.
 export { EnteredProjectContent } from './entered-content'
 export {
+  arrangeProjectRows,
+  hasNestedProjects,
   orderProjectsByIds,
   PROJECT_PREVIEW_COUNT,
+  type ProjectOverviewRowEntry,
   projectTreeCwd,
   sortProjectsForOverview,
   useRepoWorktreeMap

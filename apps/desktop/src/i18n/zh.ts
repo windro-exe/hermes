@@ -2005,6 +2005,11 @@ export const zh: Translations = {
       newButton: '新建项目',
       createTitle: '新建项目',
       createDesc: '为工作区命名并添加一个或多个文件夹。',
+      createSubTitle: (parent: string) => `在 ${parent} 中新建项目`,
+      createSubDesc: (parent: string) =>
+        `嵌套在 ${parent} 之下。它有自己的文件夹——嵌套只是把项目归类，不会移动文件。`,
+      menuNewSubProject: '新建子项目',
+      deleteSubprojectsNote: (count: number) => `其 ${count} 个子项目及这些项目的会话也会一并删除。`,
       renameTitle: '重命名项目',
       addFolderTitle: '添加文件夹',
       namePlaceholder: '例如 Skunkworks',

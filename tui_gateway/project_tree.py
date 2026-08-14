@@ -535,6 +535,10 @@ def _project_node(
     color: Any = None,
     icon: Any = None,
     is_auto: bool = False,
+    parent_id: Optional[str] = None,
+    project_path: str = "",
+    depth: int = 0,
+    children: Optional[list[dict]] = None,
 ) -> dict:
     return {
         "id": pid,
@@ -547,7 +551,84 @@ def _project_node(
         "lastActive": last_active,
         "repos": repos,
         "previewSessions": preview_sessions,
+        # FORK: nesting. ``path`` is the FOLDER on disk (unchanged); ``projectPath``
+        # is the namespace path of slugs (``official/os-projects/nettacker``), which
+        # is deliberately independent of the filesystem — two sibling checkouts can
+        # be parent and child projects.
+        "parentId": parent_id,
+        "projectPath": project_path,
+        "depth": depth,
+        # Own sessions vs the whole subtree's. A namespace project ("official")
+        # usually holds no sessions of its own, so a collapsed row still has to be
+        # able to say what is underneath it.
+        "totalSessionCount": session_count,
     }
+
+
+def _rollup_nested(nodes: list[dict], preview_limit: int) -> None:
+    """Accumulate subtree totals onto each project node, in place.
+
+    The payload stays FLAT — every project remains a top-level row carrying its
+    ``parentId`` and ``depth``, and the renderer draws the indentation. Emitting a
+    physically nested payload instead would silently break every consumer that
+    scans the tree list for a project by id or path (cwd -> project resolution,
+    the coding rail, session tiles): a nested project would simply not be found.
+
+    Rolled up per node: ``totalSessionCount`` (own + descendants), ``lastActive``
+    (newest anywhere in the subtree, so ordering by activity sees a child's work),
+    and ``previewSessions`` for parents with none of their own.
+    """
+    children: dict[str, list[dict]] = {}
+    for node in nodes:
+        parent_id = node.get("parentId")
+        if parent_id:
+            children.setdefault(parent_id, []).append(node)
+
+    resolved: dict[str, tuple[int, float, list[dict]]] = {}
+
+    def rollup(node: dict, seen: frozenset) -> tuple[int, float, list[dict]]:
+        node_id = str(node.get("id") or "")
+        if node_id in resolved:
+            return resolved[node_id]
+        total = int(node.get("sessionCount") or 0)
+        newest = float(node.get("lastActive") or 0)
+        pool = list(node.get("previewSessions") or [])
+        kids = children.get(node_id) or []
+
+        for child in kids:
+            child_id = str(child.get("id") or "")
+            # A cycle is only reachable through a corrupted DB, but walking one
+            # here would hang the sidebar refresh, so stop instead.
+            if child_id in seen:
+                continue
+            child_total, child_active, child_preview = rollup(child, seen | {child_id})
+            total += child_total
+            newest = max(newest, child_active)
+            pool.extend(child_preview)
+
+        node["totalSessionCount"] = total
+        node["lastActive"] = newest
+        if kids and preview_limit > 0:
+            # A parent's previews cover its whole subtree: collapsed, that row
+            # stands in for everything beneath it. Taking the top N of each
+            # child's top N still yields the true global top N.
+            pool.sort(key=_session_time, reverse=True)
+            seen_ids: set[str] = set()
+            deduped: list[dict] = []
+            for session in pool:
+                sid = str(session.get("id") or "")
+                if sid and sid in seen_ids:
+                    continue
+                seen_ids.add(sid)
+                deduped.append(session)
+            node["previewSessions"] = deduped[:preview_limit]
+
+        result = (total, newest, list(node.get("previewSessions") or []))
+        resolved[node_id] = result
+        return result
+
+    for node in nodes:
+        rollup(node, frozenset({str(node.get("id") or "")}))
 
 
 def build_tree(
@@ -625,13 +706,17 @@ def build_tree(
     result: list[dict] = []
 
     # Tier 1: explicit, user-created projects (always shown, even with 0 sessions).
+    #
+    # FORK: these nest. Each node carries its ``parentId``, ``projectPath`` and
+    # ``depth``; the list stays flat and the sidebar draws the hierarchy.
+    explicit_nodes: list[dict] = []
     for project in active_projects:
         psessions = by_project.get(project["id"], [])
         scoped_ids.extend(s["id"] for s in psessions if s.get("id"))
         repos = _seed_folder_repos(
             _build_repos(psessions, resolve, hydrate), project.get("folders") or [], resolve
         )
-        result.append(
+        explicit_nodes.append(
             _project_node(
                 pid=project["id"],
                 label=project.get("name") or project["id"],
@@ -642,8 +727,14 @@ def build_tree(
                 session_count=len(psessions),
                 last_active=_last_active(psessions),
                 preview_sessions=_previews(psessions),
+                parent_id=(project.get("parent_id") or None),
+                project_path=str(project.get("path") or project.get("slug") or ""),
+                depth=int(project.get("depth") or 0),
             )
         )
+
+    _rollup_nested(explicit_nodes, preview_limit)
+    result.extend(explicit_nodes)
 
     # Tier 2: auto projects from leftover sessions. Prefer the common git repo
     # root, then fall back to the session cwd for historical/non-git workspaces.

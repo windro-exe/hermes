@@ -1554,6 +1554,14 @@ export const ar = defineLocale({
       newButton: 'مشروع جديد',
       createTitle: 'مشروع جديد',
       createDesc: 'سمِّ مساحة العمل وأضف مجلدا أو أكثر.',
+      createSubTitle: (parent: string) => `مشروع جديد في ${parent}`,
+      createSubDesc: (parent: string) =>
+        `يُدرج ضمن ${parent}. مجلداته خاصة به — التداخل يجمع المشاريع ولا ينقل الملفات.`,
+      menuNewSubProject: 'مشروع فرعي جديد',
+      deleteSubprojectsNote: (count: number) =>
+        count === 1
+          ? 'سيُحذف أيضا مشروعه الفرعي الواحد وجلسات ذلك المشروع.'
+          : `ستُحذف أيضا مشاريعه الفرعية (${count}) وجلسات تلك المشاريع.`,
       renameTitle: 'إعادة تسمية المشروع',
       addFolderTitle: 'إضافة مجلد',
       namePlaceholder: 'مثال: Skunkworks',

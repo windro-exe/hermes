@@ -861,6 +861,13 @@ export interface ProjectInfo {
   archived: boolean
   created_at: number
   folders: ProjectFolder[]
+  // Nesting. `parent_id` is the stored edge; `path` and `depth` are derived from
+  // the chain of slugs on every read, so a rename or move re-paths the subtree
+  // with no stale copy anywhere. `path` is a NAMESPACE
+  // (`official/os-projects/nettacker`), not a filesystem path.
+  parent_id: null | string
+  path: string
+  depth: number
 }
 
 export interface ProjectsPayload {

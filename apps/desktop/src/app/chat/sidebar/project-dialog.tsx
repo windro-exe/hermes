@@ -168,7 +168,15 @@ export function ProjectDialog() {
     // A project owns sessions by folder (cwd-prefix), so creation requires at
     // least one — a folder-less project couldn't hold a session anyway.
     if (mode === 'create' && trimmed && folders.length) {
-      await runSubmit(() => createProject({ folders, idea: idea.trim() || undefined, name: trimmed, use: true }))
+      await runSubmit(() =>
+        createProject({
+          folders,
+          idea: idea.trim() || undefined,
+          name: trimmed,
+          parent: state?.parentId,
+          use: true
+        })
+      )
     }
   }
 
@@ -192,14 +200,25 @@ export function ProjectDialog() {
     }
   }
 
-  const title = mode === 'rename' ? p.renameTitle : mode === 'add-folder' ? p.addFolderTitle : p.createTitle
+  const parentLabel = state?.parentLabel
+
+  const title =
+    mode === 'rename'
+      ? p.renameTitle
+      : mode === 'add-folder'
+        ? p.addFolderTitle
+        : parentLabel
+          ? p.createSubTitle(parentLabel)
+          : p.createTitle
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-w-md" onInteractOutside={event => event.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {mode === 'create' && <DialogDescription>{p.createDesc}</DialogDescription>}
+          {mode === 'create' && (
+            <DialogDescription>{parentLabel ? p.createSubDesc(parentLabel) : p.createDesc}</DialogDescription>
+          )}
         </DialogHeader>
 
         {mode !== 'add-folder' && (

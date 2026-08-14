@@ -64,6 +64,19 @@ export interface SidebarProjectTree {
   lastActive?: number
   // Up to N most-recent sessions for the overview preview (set by `projects.tree`).
   previewSessions?: SessionInfo[]
+  // FORK: projects nest, to unlimited depth. The payload stays FLAT — every
+  // project is still a top-level row — and these describe where it sits:
+  /** Owning parent project's id; absent/null for a top-level project. */
+  parentId?: null | string
+  /** Namespace path of slugs, e.g. `official/os-projects/nettacker`. This is
+   *  deliberately NOT a filesystem path (see `path` for the folder on disk):
+   *  two sibling checkouts can be parent and child projects. */
+  projectPath?: string
+  /** 0 for a root project, +1 per ancestor. Drives the row indent. */
+  depth?: number
+  /** `sessionCount` plus every descendant's, so a collapsed namespace row can
+   *  still say what is underneath it. */
+  totalSessionCount?: number
 }
 
 /** Path split into segments, ignoring trailing slashes and mixed separators. */

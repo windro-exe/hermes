@@ -14059,6 +14059,10 @@ def _(rid, params, pdb, conn) -> dict:
         icon=params.get("icon"),
         color=params.get("color"),
         board_slug=params.get("board_slug"),
+        # FORK: nesting. Accepts an id, a slug, or a full path — the desktop sends
+        # the parent's id, the CLI and the agent's project tools send a path like
+        # `official/os-projects`.
+        parent=params.get("parent") or params.get("parent_id") or params.get("parent_path"),
     )
     if params.get("use"):
         pdb.set_active(conn, pid)
@@ -14077,8 +14081,23 @@ def _(rid, params, pdb, conn) -> dict:
         icon=params.get("icon"),
         color=params.get("color"),
         board_slug=params.get("board_slug"),
+        slug=params.get("slug"),
     )
     return _ok(rid, {"project": pdb.get_project(conn, proj.id).to_dict()})
+
+
+@_projects_method("projects.move")
+def _(rid, params, pdb, conn) -> dict:
+    """FORK: re-parent a project. ``parent`` omitted/empty promotes it to a root.
+
+    Returns the whole projects payload, not just the moved row: a move changes the
+    derived path of every descendant, so the client's cached copies are all stale.
+    """
+    proj = _require_project(pdb, conn, params)
+    pdb.move_project(
+        conn, proj.id, params.get("parent") or params.get("parent_id") or None
+    )
+    return _ok(rid, _projects_payload(conn))
 
 
 @_projects_method("projects.add_folder")
@@ -14133,20 +14152,32 @@ def _(rid, params, pdb, conn) -> dict:
     # `delete_sessions` is the same primitive the dashboard's bulk delete uses —
     # one transaction, delegate children cascaded, branch children orphaned
     # rather than destroyed.
+    #
+    # FORK: the subtree goes too. `projects.parent_id` cascades in SQLite, but the
+    # sessions live in another database, so the full id set has to be collected
+    # BEFORE the delete — afterwards the sub-projects are gone and their sessions
+    # would be unattributable.
     deleted_sessions = 0
     keep_sessions = is_truthy_value(params.get("keep_sessions"))
+    subtree = pdb.subtree_ids(conn, proj.id)
     if not keep_sessions:
         try:
             db = _get_db()
             if db is not None:
-                owned = db.session_ids_for_project(proj.id)
+                owned = [
+                    sid
+                    for project_id in subtree
+                    for sid in db.session_ids_for_project(project_id)
+                ]
                 if owned:
                     deleted_sessions = db.delete_sessions(owned)
                     logger.info(
-                        "projects.delete: removed %d session(s) belonging to project %s (%s)",
+                        "projects.delete: removed %d session(s) belonging to project %s (%s)"
+                        " and its %d sub-project(s)",
                         deleted_sessions,
                         proj.id,
                         proj.name,
+                        len(subtree) - 1,
                     )
         except Exception:
             # A failure here must not strand the project itself: report it and

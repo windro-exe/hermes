@@ -1518,6 +1518,10 @@ export interface Translations {
       newButton: string
       createTitle: string
       createDesc: string
+      createSubTitle: (parent: string) => string
+      createSubDesc: (parent: string) => string
+      menuNewSubProject: string
+      deleteSubprojectsNote: (count: number) => string
       renameTitle: string
       addFolderTitle: string
       namePlaceholder: string

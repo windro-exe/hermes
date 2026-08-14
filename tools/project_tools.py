@@ -55,14 +55,23 @@ def _resolve(conn, token: str):
     if not token:
         return None
     projects = pdb.list_projects(conn, include_archived=True)
-    # Exact id / slug / name first, then case-insensitive slug / name.
+    # Exact id / slug / path / name first, then case-insensitive.
     for proj in projects:
-        if token in (proj.id, proj.slug) or proj.name == token:
+        if token in (proj.id, proj.slug, proj.path) or proj.name == token:
             return proj
     low = token.lower()
-    for proj in projects:
-        if proj.slug.lower() == low or proj.name.lower() == low:
-            return proj
+    # FORK: a nested project is addressed by its PATH (`official/os-projects`).
+    # A bare slug or name can now legitimately be ambiguous across parents, so a
+    # non-unique match resolves to nothing rather than silently picking the first.
+    wanted_path = pdb.normalize_path_key(token)
+    if wanted_path:
+        hits = [p for p in projects if p.path == wanted_path]
+        if len(hits) == 1:
+            return hits[0]
+    for field in ("slug", "name"):
+        hits = [p for p in projects if str(getattr(p, field)).lower() == low]
+        if len(hits) == 1:
+            return hits[0]
     return None
 
 
@@ -79,6 +88,8 @@ def project_list(task_id: Optional[str] = None) -> str:
             {
                 "id": p.id,
                 "slug": p.slug,
+                "path": p.path,
+                "parent_id": p.parent_id,
                 "name": p.name,
                 "primary_path": _primary_path(p),
                 "active": p.id == active,
@@ -88,7 +99,12 @@ def project_list(task_id: Optional[str] = None) -> str:
     })
 
 
-def project_create(name: str, path: Optional[str] = None, task_id: Optional[str] = None) -> str:
+def project_create(
+    name: str,
+    path: Optional[str] = None,
+    parent: Optional[str] = None,
+    task_id: Optional[str] = None,
+) -> str:
     name = (name or "").strip()
     if not name:
         return json.dumps({"success": False, "error": "name is required"})
@@ -101,7 +117,13 @@ def project_create(name: str, path: Optional[str] = None, task_id: Optional[str]
 
     try:
         with pdb.connect_closing() as conn:
-            pid = pdb.create_project(conn, name=name, folders=[folder] if folder else [], primary_path=folder or None)
+            pid = pdb.create_project(
+                conn,
+                name=name,
+                folders=[folder] if folder else [],
+                primary_path=folder or None,
+                parent=(parent or "").strip() or None,
+            )
             pdb.set_active(conn, pid)
             proj = pdb.get_project(conn, pid)
     except ValueError as exc:
@@ -113,7 +135,15 @@ def project_create(name: str, path: Optional[str] = None, task_id: Optional[str]
     primary = _primary_path(proj)
     _apply_workspace(task_id, primary, proj.name)
 
-    return json.dumps({"success": True, "id": proj.id, "slug": proj.slug, "name": proj.name, "primary_path": primary})
+    return json.dumps({
+        "success": True,
+        "id": proj.id,
+        "slug": proj.slug,
+        "path": proj.path,
+        "parent_id": proj.parent_id,
+        "name": proj.name,
+        "primary_path": primary,
+    })
 
 
 def project_switch(project: str, task_id: Optional[str] = None) -> str:
@@ -128,7 +158,15 @@ def project_switch(project: str, task_id: Optional[str] = None) -> str:
     primary = _primary_path(proj)
     _apply_workspace(task_id, primary, proj.name)
 
-    return json.dumps({"success": True, "id": proj.id, "slug": proj.slug, "name": proj.name, "primary_path": primary})
+    return json.dumps({
+        "success": True,
+        "id": proj.id,
+        "slug": proj.slug,
+        "path": proj.path,
+        "parent_id": proj.parent_id,
+        "name": proj.name,
+        "primary_path": primary,
+    })
 
 
 registry.register(
@@ -136,7 +174,11 @@ registry.register(
     toolset="project",
     schema={
         "name": "project_list",
-        "description": "List the desktop Projects (named workspaces) and which one is active.",
+        "description": (
+            "List the desktop Projects (named workspaces) and which one is active. "
+            "Projects nest, so each one carries a `path` of slugs like "
+            "'official/os-projects/nettacker' — that path is how you address it."
+        ),
         "parameters": {"type": "object", "properties": {}},
     },
     handler=lambda args, **kw: project_list(task_id=kw.get("task_id")),
@@ -150,7 +192,8 @@ registry.register(
         "description": (
             "Create a desktop Project (a named workspace) and switch this chat into it. "
             "Pass `path` to anchor it to a repo/folder — this chat's workspace moves there "
-            "and the sidebar follows. Use when starting work in a new repo/folder; this is "
+            "and the sidebar follows. Pass `parent` to nest it under an existing project. "
+            "Use when starting work in a new repo/folder; this is "
             "the intentional way to move the session, not `cd`."
         ),
         "parameters": {
@@ -158,12 +201,23 @@ registry.register(
             "properties": {
                 "name": {"type": "string", "description": "Human name, e.g. 'Aurora Demo'"},
                 "path": {"type": "string", "description": "Primary repo/folder to anchor the project to"},
+                "parent": {
+                    "type": "string",
+                    "description": (
+                        "Optional parent project to nest under — its id or its slug path, "
+                        "e.g. 'official/os-projects'. Omit for a top-level project. The "
+                        "project path is a namespace, not a filesystem path."
+                    ),
+                },
             },
             "required": ["name"],
         },
     },
     handler=lambda args, **kw: project_create(
-        name=args.get("name", ""), path=args.get("path"), task_id=kw.get("task_id")
+        name=args.get("name", ""),
+        path=args.get("path"),
+        parent=args.get("parent"),
+        task_id=kw.get("task_id"),
     ),
 )
 
@@ -173,14 +227,20 @@ registry.register(
     schema={
         "name": "project_switch",
         "description": (
-            "Switch this chat into an existing desktop Project (by name, slug, or id). "
+            "Switch this chat into an existing desktop Project (by slug path, name, or id). "
             "Moves the session's workspace to the project's primary folder and the sidebar "
             "follows. The intentional way to move between projects, not `cd`."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "project": {"type": "string", "description": "Project name, slug, or id"},
+                "project": {
+                    "type": "string",
+                    "description": (
+                        "Project id, slug path ('official/os-projects'), or name. Use the "
+                        "full path when a bare name or slug exists under more than one parent."
+                    ),
+                },
             },
             "required": ["project"],
         },

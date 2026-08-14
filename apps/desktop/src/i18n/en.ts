@@ -1815,6 +1815,14 @@ export const en: Translations = {
       newButton: 'New project',
       createTitle: 'New project',
       createDesc: 'Name a workspace and add one or more folders.',
+      createSubTitle: (parent: string) => `New project in ${parent}`,
+      createSubDesc: (parent: string) =>
+        `Nests under ${parent}. Its folders are its own — nesting groups projects, it does not move files.`,
+      menuNewSubProject: 'New sub-project',
+      deleteSubprojectsNote: (count: number) =>
+        count === 1
+          ? 'Its 1 sub-project and that project’s sessions are deleted too.'
+          : `Its ${count} sub-projects and those projects’ sessions are deleted too.`,
       renameTitle: 'Rename project',
       addFolderTitle: 'Add folder',
       namePlaceholder: 'e.g. Skunkworks',

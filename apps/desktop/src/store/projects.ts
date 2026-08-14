@@ -581,6 +581,9 @@ export interface CreateProjectInput {
   use?: boolean
   // Free-text project idea; written to IDEA.md at the primary folder on create.
   idea?: string
+  // Nest under an existing project: its id, or its slug path
+  // (`official/os-projects`). Omit for a top-level project.
+  parent?: string
 }
 
 // Generate a project idea via the stateless llm.oneshot RPC (inherits the live
@@ -800,7 +803,11 @@ function projectInfoToTreeNode(project: ProjectInfo): SidebarProjectTree {
     isAuto: false,
     repos: [],
     sessionCount: 0,
-    previewSessions: []
+    previewSessions: [],
+    parentId: project.parent_id ?? null,
+    projectPath: project.path ?? project.slug,
+    depth: project.depth ?? 0,
+    totalSessionCount: 0
   }
 }
 
@@ -821,7 +828,8 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectI
       icon: input.icon,
       color: input.color,
       board_slug: input.boardSlug,
-      use: input.use ?? false
+      use: input.use ?? false,
+      parent: input.parent
     })
   } catch (err) {
     if (isMissingRpcMethod(err)) {
@@ -1040,11 +1048,15 @@ export interface ProjectDialogState {
   mode: 'add-folder' | 'create' | 'rename'
   projectId?: string
   name?: string
+  // Create mode only: nest the new project under this one. `parentLabel` is
+  // shown in the dialog so it is obvious where the project will land.
+  parentId?: string
+  parentLabel?: string
 }
 
 export const $projectDialog = atom<null | ProjectDialogState>(null)
 
-export function openProjectCreate(): void {
+export function openProjectCreate(parent?: { id: string; name: string }): void {
   if ($projectsRpcAvailable.get() === false) {
     notify({
       kind: 'warning',
@@ -1054,7 +1066,7 @@ export function openProjectCreate(): void {
     return
   }
 
-  $projectDialog.set({ mode: 'create' })
+  $projectDialog.set({ mode: 'create', parentId: parent?.id, parentLabel: parent?.name })
 }
 
 export function openProjectRename(project: { id: string; name: string }): void {

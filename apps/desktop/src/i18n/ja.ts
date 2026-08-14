@@ -1676,6 +1676,12 @@ export const ja = defineLocale({
       newButton: '新規プロジェクト',
       createTitle: '新規プロジェクト',
       createDesc: 'ワークスペースに名前を付け、1つ以上のフォルダを追加します。',
+      createSubTitle: (parent: string) => `${parent} 内に新規プロジェクト`,
+      createSubDesc: (parent: string) =>
+        `${parent} の下に入れ子にします。フォルダはこのプロジェクト専用です。入れ子はプロジェクトをまとめるだけで、ファイルは移動しません。`,
+      menuNewSubProject: 'サブプロジェクトを作成',
+      deleteSubprojectsNote: (count: number) =>
+        `サブプロジェクト ${count} 件とそのセッションもあわせて削除されます。`,
       renameTitle: 'プロジェクト名を変更',
       addFolderTitle: 'フォルダを追加',
       namePlaceholder: '例: Skunkworks',

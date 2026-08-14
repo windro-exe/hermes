@@ -53,6 +53,17 @@ def build_parser(
     p_create.add_argument(
         "--use", action="store_true", help="Set as the active project"
     )
+    p_create.add_argument(
+        "--parent", default=None, metavar="PROJECT",
+        help="Nest under an existing project (id or slug path, e.g. official/os-projects)",
+    )
+
+    p_move = sub.add_parser("move", help="Re-parent a project (nest or promote)")
+    p_move.add_argument("project", help="Project id or slug path")
+    p_move.add_argument(
+        "parent", nargs="?", default=None,
+        help="New parent id or slug path (omit to make it top-level)",
+    )
 
     p_list = sub.add_parser("list", aliases=["ls"], help="List projects")
     p_list.add_argument(
@@ -133,6 +144,7 @@ def projects_command(args: argparse.Namespace) -> int:
         "archive": _cmd_archive,
         "restore": _cmd_restore,
         "bind-board": _cmd_bind_board,
+        "move": _cmd_move,
     }
     handler = handlers.get(action)
     if handler is None:
@@ -172,8 +184,10 @@ def _with_project(fn):
 
 def _print_project(proj) -> None:
     flags = " (archived)" if proj.archived else ""
-    print(f"{proj.slug}  [{proj.id}]{flags}")
+    print(f"{proj.path}  [{proj.id}]{flags}")
     print(f"  name:    {proj.name}")
+    if proj.parent_id:
+        print(f"  parent:  {proj.parent_id}")
     if proj.description:
         print(f"  about:   {proj.description}")
     if proj.board_slug:
@@ -201,6 +215,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
                 icon=args.icon,
                 color=args.color,
                 board_slug=args.board,
+                parent=getattr(args, "parent", None),
             )
             if args.use:
                 pdb.set_active(conn, pid)
@@ -211,8 +226,25 @@ def _cmd_create(args: argparse.Namespace) -> int:
     if proj is None:
         print("project: vanished after create", file=sys.stderr)
         return 2
-    print(f"Created project {proj.slug} ({pid})")
+    print(f"Created project {proj.path} ({pid})")
     _print_project(proj)
+    return 0
+
+
+def _cmd_move(args: argparse.Namespace) -> int:
+    """Re-parent a project. Nesting is a namespace change, not a file move — no
+    folder on disk is touched, only the project's place in the path."""
+    with pdb.connect_closing() as conn:
+        proj = _resolve(conn, args.project)
+        if proj is None:
+            return 1
+        try:
+            pdb.move_project(conn, proj.id, args.parent)
+        except ValueError as exc:
+            print(f"project: {exc}", file=sys.stderr)
+            return 2
+        moved = pdb.get_project(conn, proj.id)
+    print(f"Moved {proj.path} -> {moved.path if moved else '?'}")
     return 0
 
 
@@ -225,11 +257,15 @@ def _cmd_list(args: argparse.Namespace) -> int:
     if not projs:
         print("No projects yet. Create one with `hermes project create <name>`.")
         return 0
+    # `list_projects` orders by path, so children always follow their parent and
+    # a depth indent renders the tree in one pass.
     for p in projs:
         marker = "*" if p.id == active else " "
         flags = " (archived)" if p.archived else ""
         nfolders = len(p.folders)
-        print(f"{marker} {p.slug:<24} {p.name}{flags}  [{nfolders} folder(s)]")
+        indent = "  " * p.depth
+        column = f"{indent}{p.slug}"
+        print(f"{marker} {column:<24} {p.name}{flags}  [{nfolders} folder(s)]")
     return 0
 
 

@@ -36,10 +36,13 @@ function makeProject(id: string, folders: string[], color: null | string): Proje
     color,
     created_at: 0,
     description: null,
+    depth: 0,
     folders: folders.map((path, i) => ({ added_at: 0, is_primary: i === 0, label: null, path })),
     icon: null,
     id,
     name: id,
+    parent_id: null,
+    path: id,
     primary_path: folders[0] ?? null,
     slug: id
   }

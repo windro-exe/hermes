@@ -1,4 +1,5 @@
 import type { useSensors } from '@dnd-kit/core'
+import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useMemo } from 'react'
 
@@ -12,11 +13,14 @@ import { flattenSessionsWithBranches } from '@/lib/session-branch-tree'
 import { groupEntriesByRecency, type SidebarListRow, toSessionRows } from '@/lib/session-date-groups'
 import { sessionBucketLabel } from '@/lib/time'
 import { cn } from '@/lib/utils'
+import { $sidebarWorkspaceNodeOpen } from '@/store/layout'
 import { sessionPinId } from '@/store/session'
 
 import { SidebarCount, SidebarDateDivider } from './chrome'
 import {
+  arrangeProjectRows,
   EnteredProjectContent,
+  hasNestedProjects,
   ProjectOverviewRow,
   type SidebarProjectTree,
   type SidebarSessionGroup,
@@ -192,6 +196,10 @@ export function SidebarSessionsSection({
 }: SidebarSessionsSectionProps) {
   const { t } = useI18n()
   const dividerLabels = t.sidebar.dateDivider
+  // A parent project's disclosure state decides whether its sub-project ROWS are
+  // rendered at all, so the list builder needs it here — not only inside the row
+  // (where `useWorkspaceNodeOpen` reads the same store under the same key).
+  const workspaceNodeOpen = useStore($sidebarWorkspaceNodeOpen)
   const sectionOpen = collapsible ? open : true
   const hasGroupedSessions = Boolean(groups?.some(group => group.sessions.length > 0))
   // A defined project list is itself content (even an empty project should
@@ -308,12 +316,21 @@ export function SidebarSessionsSection({
     // The model is already ordered (default sort groups explicit-before-auto;
     // a manual drag-order, when present, wins). Render in that order and make
     // rows drag-to-reorder when a handler is wired.
-    const projectsDraggable = projectOverview.length > 1 && !!onReorderProjects
+    //
+    // Sub-projects render as indented sibling rows, hidden while their parent is
+    // collapsed. Manual drag-reorder is suppressed once anything is nested: the
+    // saved order is a flat list of ids, so dropping a child between two roots
+    // would express a position the model cannot represent.
+    const nested = hasNestedProjects(projectOverview)
+    const projectsDraggable = !nested && projectOverview.length > 1 && !!onReorderProjects
     const Row = projectsDraggable ? SortableProjectOverviewRow : ProjectOverviewRow
+    const rowEntries = arrangeProjectRows(projectOverview, project => workspaceNodeOpen[project.id] ?? true)
 
-    const rows = projectOverview.map(project => (
+    const rows = rowEntries.map(({ childCount, depth, project }) => (
       <Row
         activeProjectId={activeProjectId}
+        childCount={childCount}
+        depth={depth}
         key={project.id}
         onEnter={onEnterProject}
         onNewSession={onNewSessionInWorkspace}

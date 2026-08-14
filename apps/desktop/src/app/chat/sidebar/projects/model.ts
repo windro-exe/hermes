@@ -45,6 +45,10 @@ const projectActivityTime = (project: SidebarProjectTree): number =>
 export const latestProjectSessions = (project: SidebarProjectTree, limit: number): SessionInfo[] =>
   [...projectSessions(project)].sort((a, b) => sessionRecency(b) - sessionRecency(a)).slice(0, limit)
 
+/** Sessions in a project INCLUDING its sub-projects (backend-rolled). */
+export const subtreeSessionCount = (project: SidebarProjectTree): number =>
+  project.totalSessionCount ?? project.sessionCount
+
 export function sortProjectsForOverview(
   projects: SidebarProjectTree[],
   activeProjectId: null | string
@@ -61,8 +65,10 @@ export function sortProjectsForOverview(
       return a.isAuto ? 1 : -1
     }
 
-    const aHasSessions = a.sessionCount > 0
-    const bHasSessions = b.sessionCount > 0
+    // Subtree-inclusive: a namespace project ("official") holds no sessions of
+    // its own, and must not sink below empty projects because of it.
+    const aHasSessions = subtreeSessionCount(a) > 0
+    const bHasSessions = subtreeSessionCount(b) > 0
 
     if (aHasSessions !== bHasSessions) {
       return aHasSessions ? -1 : 1
@@ -102,10 +108,105 @@ export function orderProjectsByIds(projects: SidebarProjectTree[], orderIds: str
   }
 
   return [
-    ...fresh.filter(project => project.sessionCount > 0),
+    ...fresh.filter(project => subtreeSessionCount(project) > 0),
     ...ordered,
-    ...fresh.filter(project => project.sessionCount <= 0)
+    ...fresh.filter(project => subtreeSessionCount(project) <= 0)
   ]
+}
+
+/** True when any project in the overview is nested under another. */
+export const hasNestedProjects = (projects: SidebarProjectTree[]): boolean =>
+  projects.some(project => Boolean(project.parentId))
+
+export interface ProjectOverviewRowEntry {
+  project: SidebarProjectTree
+  /** Indent level actually rendered — recomputed from the visible ancestors, so
+   *  a child whose parent is filtered out of the overview still lines up. */
+  depth: number
+  /** Direct children, whether or not they are currently expanded. */
+  childCount: number
+}
+
+/**
+ * Order the overview's flat project list into a visible tree: each project is
+ * followed by its children, and a collapsed project's whole subtree is omitted.
+ *
+ * The backend keeps the payload flat on purpose (every consumer that resolves a
+ * cwd or a session to a project scans that list), so the hierarchy is drawn here
+ * from `parentId`. Roots keep whatever order the caller already sorted them into;
+ * children follow their parent in that same relative order.
+ *
+ * `isOpen` is asked only about projects that actually have children, so a leaf's
+ * disclosure state (which toggles its session preview) never hides anything.
+ */
+export function arrangeProjectRows(
+  projects: SidebarProjectTree[],
+  isOpen: (project: SidebarProjectTree) => boolean
+): ProjectOverviewRowEntry[] {
+  const present = new Set(projects.map(project => project.id))
+  const childrenOf = new Map<string, SidebarProjectTree[]>()
+  const roots: SidebarProjectTree[] = []
+
+  for (const project of projects) {
+    const parentId = project.parentId ?? ''
+
+    // A child whose parent is missing here (archived, dismissed, or filtered)
+    // becomes a root rather than disappearing with it.
+    if (parentId && present.has(parentId)) {
+      const bucket = childrenOf.get(parentId)
+
+      bucket ? bucket.push(project) : childrenOf.set(parentId, [project])
+    } else {
+      roots.push(project)
+    }
+  }
+
+  // A `parentId` cycle leaves its members unreachable from every root, so a
+  // plain root-down walk would drop them from the sidebar entirely. Find them
+  // first (ignoring collapse) and treat them as roots: a corrupt edge should
+  // cost the indent, not the project.
+  const reachable = new Set<string>()
+  const mark = (project: SidebarProjectTree): void => {
+    if (reachable.has(project.id)) {
+      return
+    }
+
+    reachable.add(project.id)
+
+    for (const child of childrenOf.get(project.id) ?? []) {
+      mark(child)
+    }
+  }
+
+  for (const root of roots) {
+    mark(root)
+  }
+
+  const rows: ProjectOverviewRowEntry[] = []
+  const walked = new Set<string>()
+
+  const walk = (project: SidebarProjectTree, depth: number): void => {
+    if (walked.has(project.id)) {
+      return
+    }
+
+    walked.add(project.id)
+    const children = childrenOf.get(project.id) ?? []
+
+    rows.push({ childCount: children.length, depth, project })
+
+    if (children.length && isOpen(project)) {
+      for (const child of children) {
+        walk(child, depth + 1)
+      }
+    }
+  }
+
+  for (const project of [...roots, ...projects.filter(p => !reachable.has(p.id))]) {
+    walk(project, 0)
+  }
+
+  return rows
 }
 
 // Project drill-in lanes are git-driven: source them from `git worktree list` so

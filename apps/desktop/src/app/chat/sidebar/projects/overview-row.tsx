@@ -62,6 +62,10 @@ export function ProjectBackRow({ label, onClick }: { label: string; onClick: () 
   )
 }
 
+// Indent per nesting level, in px. Matches the lead glyph column so a child's
+// icon sits under its parent's label rather than in an arbitrary gutter.
+const NEST_INDENT = 12
+
 interface ProjectOverviewRowProps {
   project: SidebarProjectTree
   onEnter?: (id: string) => void
@@ -74,6 +78,11 @@ interface ProjectOverviewRowProps {
   dragHandleProps?: React.HTMLAttributes<HTMLElement>
   ref?: React.Ref<HTMLDivElement>
   style?: React.CSSProperties
+  /** Nesting depth (0 = top level). Rendered as an indent. */
+  depth?: number
+  /** Direct sub-projects. When > 0 the disclosure caret shows/hides them (they
+   *  are sibling rows in the overview list, arranged by `arrangeProjectRows`). */
+  childCount?: number
 }
 
 export function ProjectOverviewRow({
@@ -87,7 +96,9 @@ export function ProjectOverviewRow({
   dragging = false,
   dragHandleProps,
   ref,
-  style
+  style,
+  depth = 0,
+  childCount = 0
 }: ProjectOverviewRowProps) {
   const { t } = useI18n()
   const s = t.sidebar
@@ -98,6 +109,10 @@ export function ProjectOverviewRow({
   const rowRef = useRef<HTMLDivElement>(null)
   const fetched = (previewSessions ?? []).slice(0, PROJECT_PREVIEW_COUNT)
   const preview = renderRows ? (fetched.length ? fetched : latestProjectSessions(project, PROJECT_PREVIEW_COUNT)) : []
+  // One caret drives both halves of the disclosure: a project with sub-projects
+  // shows/hides them, and its own session preview follows the same state. Two
+  // separate carets on one row read as a bug, not as a feature.
+  const hasDisclosure = childCount > 0 || preview.length > 0
 
   const lead = reorderable ? (
     <SidebarRowGrab
@@ -113,14 +128,18 @@ export function ProjectOverviewRow({
   )
 
   return (
-    <div className={cn(dragging && 'relative z-10')} ref={ref} style={style}>
+    <div
+      className={cn(dragging && 'relative z-10')}
+      ref={ref}
+      style={depth > 0 ? { ...style, paddingLeft: depth * NEST_INDENT } : style}
+    >
       <SidebarRowShell
         actions={
           <>
             {onNewSession && (
               <WorkspaceAddButton label={s.newSessionIn(project.label)} onClick={() => onNewSession(project.path)} />
             )}
-            <ProjectMenu anchorRef={rowRef} isActive={isActive} project={project} />
+            <ProjectMenu anchorRef={rowRef} childCount={childCount} isActive={isActive} project={project} />
           </>
         }
         className={cn('group/workspace', dragging && 'cursor-grabbing bg-(--ui-sidebar-surface-background)')}
@@ -135,7 +154,7 @@ export function ProjectOverviewRow({
           >
             {project.label}
           </SidebarRowLink>
-          {preview.length > 0 ? (
+          {hasDisclosure ? (
             <Tip label={s.projects.toggle(project.label)}>
               <button
                 aria-label={s.projects.toggle(project.label)}
@@ -144,7 +163,13 @@ export function ProjectOverviewRow({
                 type="button"
               >
                 <DisclosureCaret
-                  className="shrink-0 text-(--ui-text-tertiary) opacity-0 transition group-hover/workspace:opacity-100"
+                  className={cn(
+                    'shrink-0 text-(--ui-text-tertiary) transition',
+                    // A caret that hides whole sub-projects stays visible: unlike
+                    // the preview caret, what it conceals is not reachable any
+                    // other way.
+                    childCount > 0 ? 'opacity-60' : 'opacity-0 group-hover/workspace:opacity-100'
+                  )}
                   open={open}
                 />
               </button>

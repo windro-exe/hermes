@@ -23,6 +23,7 @@ import {
   copyPath,
   deleteProject,
   openProjectAddFolder,
+  openProjectCreate,
   openProjectRename,
   revealPath,
   setActiveProject,
@@ -73,10 +74,13 @@ export function ProjectMenu({
   isActive,
   scoped = false,
   onExitScope,
-  anchorRef
+  anchorRef,
+  childCount = 0
 }: {
   project: SidebarProjectTree
   isActive: boolean
+  // Direct sub-projects, so the delete confirmation can say they go too.
+  childCount?: number
   // True when rendered in the entered-project header, so removal can leave the
   // now-defunct scope.
   scoped?: boolean
@@ -203,6 +207,12 @@ export function ProjectMenu({
                 <Codicon name="new-folder" size="0.875rem" />
                 <span>{p.menuAddFolder}</span>
               </DropdownMenuItem>
+              {/* Nesting is a namespace move, not a file move: the sub-project
+                  picks its own folders, which may sit anywhere on disk. */}
+              <DropdownMenuItem onSelect={() => openProjectCreate(target)}>
+                <Codicon name="type-hierarchy-sub" size="0.875rem" />
+                <span>{p.menuNewSubProject}</span>
+              </DropdownMenuItem>
               <DropdownMenuItem disabled={isActive} onSelect={() => void setActiveProject(project.id)}>
                 <Codicon name="target" size="0.875rem" />
                 <span>{p.menuSetActive}</span>
@@ -279,7 +289,9 @@ export function ProjectMenu({
       </PopoverContent>
       <ConfirmDialog
         confirmLabel={p.menuDelete}
-        description={p.deleteConfirm}
+        description={
+          childCount > 0 ? `${p.deleteConfirm} ${p.deleteSubprojectsNote(childCount)}` : p.deleteConfirm
+        }
         destructive
         onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={confirmDelete}

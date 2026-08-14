@@ -1624,6 +1624,11 @@ export const zhHant = defineLocale({
       newButton: '新增專案',
       createTitle: '新增專案',
       createDesc: '為工作區命名並新增一個或多個資料夾。',
+      createSubTitle: (parent: string) => `在 ${parent} 中新增專案`,
+      createSubDesc: (parent: string) =>
+        `巢狀於 ${parent} 之下。它有自己的資料夾——巢狀只是把專案分組，不會搬動檔案。`,
+      menuNewSubProject: '新增子專案',
+      deleteSubprojectsNote: (count: number) => `其 ${count} 個子專案及這些專案的工作階段也會一併刪除。`,
       renameTitle: '重新命名專案',
       addFolderTitle: '新增資料夾',
       namePlaceholder: '例如 Skunkworks',

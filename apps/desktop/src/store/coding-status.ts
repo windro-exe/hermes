@@ -3,7 +3,7 @@ import { atom, computed } from 'nanostores'
 import type { HermesGitWorktree, HermesRepoStatus } from '@/global'
 import { desktopGit } from '@/lib/desktop-git'
 
-import { $worktreeRefreshToken } from './projects'
+import { $projectTree, $projectTreeLoading, $worktreeRefreshToken, projectIdForCwd } from './projects'
 import { $busy, $currentCwd, $selectedStoredSessionId } from './session'
 import { $workspaceChangeTick } from './workspace-events'
 
@@ -143,6 +143,34 @@ export function refreshRepoStatus(cwd?: null | string): Promise<void> {
   const probe = desktopGit()?.repoStatus
   const seq = (repoStatusRefreshSeq += 1)
 
+  // FORK: the coding rail belongs to projects. A session that is not inside one
+  // shows no branch, no +/-, no ahead/behind.
+  //
+  // The rail probed whatever directory the session happened to sit in, so a
+  // session with no project still reported a repo's branch and uncommitted diff —
+  // including, once, an unrelated developer checkout the cwd had leaked to. New
+  // sessions are detached now so there is usually nothing to probe, but "no branch
+  // because the cwd happened to be empty" is incidental; any future cwd leak brings
+  // the label straight back. This makes it structural.
+  //
+  // `$projectTree` carries only explicit projects (the gateway's auto tiers are
+  // off), so ownership here means a project the user actually created. While the
+  // tree is still loading we do NOT suppress — an empty tree at boot is "unknown",
+  // not "unowned", and treating it as unowned would blink the rail off on every
+  // startup.
+  const treeReady = !$projectTreeLoading.get() && $projectTree.get().length > 0
+  const ownedByProject = target ? projectIdForCwd(target) !== null : false
+
+  if (target && treeReady && !ownedByProject) {
+    pendingRepoStatusRefresh = null
+    inflightCwd = null
+    $repoStatus.set(null)
+    $repoWorktrees.set([])
+    $repoStatusLoading.set(false)
+
+    return repoStatusRefreshInFlight || Promise.resolve()
+  }
+
   if (!target || !probe) {
     pendingRepoStatusRefresh = null
     inflightCwd = null
@@ -199,6 +227,13 @@ $selectedStoredSessionId.subscribe(() => scheduleRepoStatusRefresh())
 // A worktree add/remove (desktop op, or the agent's out-of-band git in a settled
 // turn / a window refocus — both already bump this token) → re-probe.
 $worktreeRefreshToken.subscribe(() => scheduleRepoStatusRefresh())
+
+// FORK: the project tree arriving (or changing) is a structural edge for the
+// ownership gate above. At boot the tree is empty, so the gate defers rather than
+// suppressing; without this the rail would then stay blank until some other
+// trigger fired. Also covers a folder being added to a project, which can newly
+// bring the current cwd inside one.
+$projectTree.subscribe(() => scheduleRepoStatusRefresh())
 
 // A file-mutating tool finished (event-driven, not polled) → re-probe so the
 // rail's branch/+/- move exactly when the agent touches the tree.

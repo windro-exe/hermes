@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { HermesRepoStatus } from '@/global'
 
 import { $repoStatus, $repoStatusLoading, refreshRepoStatus } from './coding-status'
+import { $projectTree, $projectTreeLoading } from './projects'
 import { $currentCwd, $selectedStoredSessionId } from './session'
 
 const sampleStatus: HermesRepoStatus = {
@@ -157,7 +158,7 @@ describe('refreshRepoStatus', () => {
     probe.mockClear()
 
     // Switch to a different session in the SAME repo dir. The cwd atom value is
-    // identical, so its subscription would not re-fire — but the stored-session
+    // identical, so its subscription would not re-fire â€” but the stored-session
     // id did change, which must still trigger a probe so the branch label
     // tracks the new session's checked-out branch.
     $selectedStoredSessionId.set('session-b')
@@ -165,5 +166,116 @@ describe('refreshRepoStatus', () => {
     await vi.runAllTicks()
 
     expect(probe).toHaveBeenCalledWith('/repo')
+  })
+})
+
+describe('project ownership gate (FORK)', () => {
+  // The coding rail belongs to projects. A session that is not inside one shows no
+  // branch, no +/-, no ahead/behind. Before this, the rail probed whatever folder
+  // the session happened to sit in â€” so a session with no project reported a
+  // repo's branch and uncommitted diff, including an unrelated developer checkout
+  // its cwd had leaked to.
+  const project = (path: string) =>
+    ({
+      id: 'p_one',
+      label: 'One',
+      path,
+      repos: [{ id: path, label: 'repo', path, groups: [], sessionCount: 1 }],
+      isAuto: false
+    }) as never
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    $repoStatus.set(null)
+    $currentCwd.set('')
+    $projectTree.set([])
+    $projectTreeLoading.set(false)
+    delete (window as unknown as { hermesDesktop?: unknown }).hermesDesktop
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+    $projectTree.set([])
+    delete (window as unknown as { hermesDesktop?: unknown }).hermesDesktop
+  })
+
+  it('does not probe a cwd that belongs to no project', async () => {
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([project('C:/repos/mine')])
+
+    await refreshRepoStatus('C:/somewhere/unrelated')
+
+    expect(probe).not.toHaveBeenCalled()
+    expect($repoStatus.get()).toBeNull()
+    expect($repoStatusLoading.get()).toBe(false)
+  })
+
+  it('probes a cwd inside a project', async () => {
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([project('C:/repos/mine')])
+
+    await refreshRepoStatus('C:/repos/mine')
+
+    expect(probe).toHaveBeenCalled()
+    expect($repoStatus.get()?.branch).toBe('feature/login')
+  })
+
+  it('probes a nested path inside a project', async () => {
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([project('C:/repos/mine')])
+
+    await refreshRepoStatus('C:/repos/mine/src/deep')
+
+    expect(probe).toHaveBeenCalled()
+  })
+
+  it('defers rather than suppressing while the tree is still loading', async () => {
+    // An empty tree at boot is "unknown", not "unowned". Suppressing here would
+    // blink the rail off on every startup.
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([])
+    $projectTreeLoading.set(true)
+
+    await refreshRepoStatus('C:/repos/mine')
+
+    expect(probe).toHaveBeenCalled()
+  })
+
+  it('defers when the tree is empty even if not marked loading', async () => {
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([])
+    $projectTreeLoading.set(false)
+
+    await refreshRepoStatus('C:/repos/mine')
+
+    expect(probe).toHaveBeenCalled()
+  })
+
+  it('clears a stale branch label when the gate closes', async () => {
+    const probe = vi.fn(async () => sampleStatus)
+    stubProbe(probe)
+    $projectTree.set([project('C:/repos/mine')])
+    await refreshRepoStatus('C:/repos/mine')
+    expect($repoStatus.get()).not.toBeNull()
+
+    // Switching to a session outside any project must not leave the old label up.
+    await refreshRepoStatus('C:/somewhere/unrelated')
+
+    expect($repoStatus.get()).toBeNull()
+  })
+
+  it('an empty cwd still yields no status', async () => {
+    stubProbe(async () => sampleStatus)
+    $projectTree.set([project('C:/repos/mine')])
+
+    await refreshRepoStatus('')
+
+    expect($repoStatus.get()).toBeNull()
   })
 })

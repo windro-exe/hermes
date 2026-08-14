@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-14 | Changed | [`main` becomes production; work lands on `dev` and reaches `main` by PR only](entries/2026-08-14-02-dev-branch-workflow.md) | current |
 | 2026-08-14 | Added | [Projects nest: identity is a path of slugs, unlimited depth](entries/2026-08-14-01-nested-projects.md) | current |
 | 2026-08-09 | Fixed | [Kiro models silently lost image input](entries/2026-08-09-06-kiro-vision-routing.md) | current |
 | 2026-08-09 | Added | [The in-GUI Update button had no updater binary to hand off to](entries/2026-08-09-05-windows-setup-workflow.md) | current |

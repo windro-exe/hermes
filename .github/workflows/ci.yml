@@ -14,10 +14,17 @@ name: CI
 # Do not add ``secrets: inherit`` or GitHub App credentials here. Trusted
 # main-only automation uses protected environments in its own workflows.
 
+# FORK: ``dev`` added to the push list. ``main`` is the production branch the
+# installers and the updater track (hermes_fork.FORK_DEFAULT_BRANCH,
+# install.ps1 -Branch, install.sh BRANCH, DEFAULT_UPDATE_BRANCH in
+# apps/desktop/electron/main.ts), so work lands on ``dev`` first and reaches
+# ``main`` only by PR. Without ``dev`` here, direct pushes to it would run no
+# CI at all and the integration branch would be the one place nothing is
+# checked -- the opposite of the point.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read

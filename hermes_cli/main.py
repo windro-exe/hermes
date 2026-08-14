@@ -13657,6 +13657,39 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
     except subprocess.CalledProcessError as e:
         if sys.platform == "win32":
+            # FORK: never re-download the project when the pull already landed.
+            #
+            # This handler caught ANY CalledProcessError and answered with a full
+            # ZIP re-download. That is wildly disproportionate for the most common
+            # Windows failure: `uv pip install -e .` cannot delete
+            # venv\Scripts\hermes.exe because the update is RUNNING from it, so it
+            # exits 2 with "The process cannot access the file because it is being
+            # used by another process (os error 32)".
+            #
+            # Observed consequence: git pull succeeded, the editable reinstall
+            # failed on a 45KB shim, and the updater then started downloading the
+            # entire repository — over a stalled connection with no timeout, which
+            # the user experienced as an update hanging for minutes. Had it
+            # completed it would have extracted over a working tree that was
+            # already correct, which is how the fork previously lost its own files.
+            #
+            # Tested against the verifiable fact rather than a flag: if HEAD already
+            # matches the remote branch, the code on disk IS the update, and the
+            # only thing that failed is a post-pull step the user can retry.
+            if _worktree_matches_remote(branch):
+                print(f"⚠ Post-update step failed: {e}")
+                print()
+                print("  The code itself is already up to date — only a step after")
+                print("  the pull failed, so nothing needs re-downloading.")
+                print()
+                print("  The usual cause on Windows is a running Hermes holding")
+                print("  venv\\Scripts\\hermes.exe open, which blocks the editable")
+                print("  reinstall. Close all Hermes windows and re-run:")
+                print()
+                print("    hermes update")
+                print()
+                sys.exit(1)
+
             print(f"⚠ Git update failed: {e}")
             print("→ Falling back to ZIP download...")
             print()
@@ -13664,6 +13697,48 @@ def _cmd_update_impl(args, gateway_mode: bool):
         else:
             print(f"✗ Update failed: {e}")
             sys.exit(1)
+
+
+def _worktree_matches_remote(branch: str) -> bool:
+    """FORK: is the checkout already at the remote branch tip?
+
+    Used to decide whether a failed update step means "the repo is broken, re-fetch
+    everything" or "the code already landed and a later step failed". Only the
+    second is true for the common Windows case where ``uv pip install -e .`` cannot
+    replace the running ``hermes.exe``.
+
+    Deliberately conservative: any doubt (git missing, detached HEAD, no such
+    remote ref, shallow clone that cannot prove ancestry) returns False and the
+    caller keeps its existing fallback. A false positive here would skip a repair
+    the user needs; a false negative only costs a re-download they were already
+    getting.
+    """
+    ref = (branch or "main").strip() or "main"
+    # Mirrors how cmd_update builds it (main.py:11904): the Windows flag avoids
+    # atomic-append failures on some filesystems.
+    git_cmd = ["git"]
+    if sys.platform == "win32":
+        git_cmd = ["git", "-c", "windows.appendAtomically=false"]
+
+    def _sha(rev: str) -> str:
+        try:
+            done = subprocess.run(
+                git_cmd + ["rev-parse", "--verify", rev],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+        except Exception:
+            return ""
+        return done.stdout.strip() if done.returncode == 0 else ""
+
+    head = _sha("HEAD")
+    remote = _sha(f"refs/remotes/origin/{ref}")
+
+    return bool(head) and head == remote
 
 
 def _coalesce_session_name_args(argv: list) -> list:

@@ -474,7 +474,34 @@ def _project_for_path(index: _FolderIndex, target: str) -> Optional[dict]:
     return index.match(target)[0]
 
 
-def _project_for_session(session: dict, index: _FolderIndex, resolve: Optional[Resolve]) -> Optional[dict]:
+def _project_for_session(
+    session: dict,
+    index: _FolderIndex,
+    resolve: Optional[Resolve],
+    by_id: Optional[dict] = None,
+) -> Optional[dict]:
+    """Which project owns this session?
+
+    FORK: a stored ``project_id`` wins over path matching.
+
+    Membership used to be derived purely from ``cwd``, which the agent MUTATES as
+    it works — so a chat started inside a project silently left it as soon as the
+    agent cd'd or cloned outside the project's folders (observed: a session in
+    "Os-Projects" moved to the sibling repo ``nettacker`` and disappeared from the
+    project). The binding is now recorded once at creation and read back here.
+
+    Path matching remains the fallback for rows that predate the column, so
+    existing sessions keep whatever grouping they already had.
+    """
+    stored = (session.get("project_id") or "").strip()
+    if stored and by_id:
+        owner = by_id.get(stored)
+        if owner is not None:
+            return owner
+        # A project_id pointing at a project that no longer exists means the
+        # project was deleted. Fall through to path matching rather than
+        # returning a phantom owner.
+
     cwd = (session.get("cwd") or "").strip()
     if not cwd:
         return None
@@ -571,11 +598,14 @@ def build_tree(
     _junk_cwd = is_junk_cwd or (lambda _cwd: False)
     _exists = exists or (lambda _path: True)
     folder_index = _FolderIndex(active_projects)
+    # FORK: id -> project, so a session's stored project_id can be honoured
+    # directly instead of re-deriving membership from its (mutable) cwd.
+    projects_by_id = {str(p.get("id")): p for p in active_projects if p.get("id")}
 
     by_project: dict[str, list[dict]] = {}
     unowned: list[dict] = []
     for session in sessions:
-        owner = _project_for_session(session, folder_index, resolve)
+        owner = _project_for_session(session, folder_index, resolve, projects_by_id)
         if owner:
             by_project.setdefault(owner["id"], []).append(session)
         else:

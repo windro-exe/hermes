@@ -2488,6 +2488,13 @@ def _ensure_session_db_row(session: dict) -> None:
             # into one list can't rely on which file a row came from alone. NULL
             # means the launch/default profile (matches run_agent's convention).
             profile_name=Path(profile_home).name if profile_home else None,
+            # FORK: the owning project, recorded once. Membership used to be
+            # recomputed from `cwd` on every tree build, and cwd MOVES as the agent
+            # works — so a chat started inside a project silently left it the moment
+            # the agent cd'd or cloned outside the project's folders. NULL means the
+            # session was not started in a project; those still fall back to
+            # cwd-derived grouping.
+            project_id=session.get("project_id") or None,
         )
     except Exception:
         logger.debug("failed to persist desktop session row", exc_info=True)
@@ -6944,6 +6951,11 @@ def _(rid, params: dict) -> dict:
     profile = (params.get("profile") or "").strip() or None
     profile_home = _profile_home(profile)
 
+    # FORK: the project this chat is being started in, if any. Recorded once and
+    # never recomputed — see the `project_id` column comment in hermes_state.py.
+    # Absent/blank means "not in a project", which stays NULL.
+    create_project_id = str(params.get("project_id") or "").strip() or None
+
     # The desktop composer owns its model/effort/fast as plain UI state and ships
     # it on every session.create. Honor each as a PER-SESSION override (built into
     # the agent below) — never a global config write, so picking a model/effort
@@ -7005,6 +7017,10 @@ def _(rid, params: dict) -> dict:
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
             "profile_home": str(profile_home) if profile_home is not None else None,
+            # FORK: sticky project membership, read by _ensure_session_db_row on the
+            # first prompt. Held in the in-memory session so it survives the gap
+            # between session.create and the lazy row insert.
+            "project_id": create_project_id,
             "running": False,
             "session_key": key,
             "show_reasoning": _load_show_reasoning(),
@@ -14102,8 +14118,47 @@ def _(rid, params, pdb, conn) -> dict:
 @_projects_method("projects.delete")
 def _(rid, params, pdb, conn) -> dict:
     proj = _require_project(pdb, conn, params)
+    # FORK: deleting a project deletes the sessions that belong to it.
+    #
+    # A project's sessions are its contents, not merely rows that happened to
+    # match its path — that is the whole point of recording `project_id` at
+    # creation. Leaving them behind dumped a pile of orphaned conversations into
+    # Recents with no way to tell what they had belonged to.
+    #
+    # Only sessions whose STORED project_id matches are removed. Sessions that
+    # merely sit inside the project's folders (the legacy cwd-derived grouping)
+    # are left alone: their membership was inferred, never stated, so deleting
+    # them would destroy conversations the user never filed here.
+    #
+    # `delete_sessions` is the same primitive the dashboard's bulk delete uses —
+    # one transaction, delegate children cascaded, branch children orphaned
+    # rather than destroyed.
+    deleted_sessions = 0
+    keep_sessions = is_truthy_value(params.get("keep_sessions"))
+    if not keep_sessions:
+        try:
+            db = _get_db()
+            if db is not None:
+                owned = db.session_ids_for_project(proj.id)
+                if owned:
+                    deleted_sessions = db.delete_sessions(owned)
+                    logger.info(
+                        "projects.delete: removed %d session(s) belonging to project %s (%s)",
+                        deleted_sessions,
+                        proj.id,
+                        proj.name,
+                    )
+        except Exception:
+            # A failure here must not strand the project itself: report it and
+            # still delete the project, rather than leaving both half-done.
+            logger.warning(
+                "projects.delete: failed to delete sessions for %s", proj.id, exc_info=True
+            )
+
     pdb.delete_project(conn, proj.id)
-    return _ok(rid, _projects_payload(conn))
+    payload = _projects_payload(conn)
+    payload["deleted_sessions"] = deleted_sessions
+    return _ok(rid, payload)
 
 
 @_projects_method("projects.set_active")
@@ -14427,6 +14482,9 @@ def _project_tree_row(r: dict) -> dict:
         "cwd": r.get("cwd"),
         "git_branch": r.get("git_branch"),
         "git_repo_root": r.get("git_repo_root"),
+        # FORK: sticky project membership. Must be projected or build_tree falls
+        # back to cwd matching for every row and the column does nothing.
+        "project_id": r.get("project_id"),
     }
 
 

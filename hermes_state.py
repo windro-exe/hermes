@@ -1194,6 +1194,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     rewind_count INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0,
     pinned INTEGER NOT NULL DEFAULT 0,
+    -- FORK: the project this session belongs to, recorded ONCE at creation.
+    --
+    -- Membership used to be derived from `cwd` on every tree build. cwd is
+    -- mutable — the agent updates it as it works — so a session started inside a
+    -- project silently LEFT that project the moment the agent cd'd or cloned
+    -- outside the project's folders. Observed: a session created in "Os-Projects"
+    -- (C:\wnx-projects\official\os-contributions) moved to the sibling repo
+    -- `nettacker` and vanished from the project, with nothing to correct because
+    -- the binding was never stored.
+    --
+    -- NULL means "not created in a project"; those sessions still fall back to
+    -- cwd-derived ownership so pre-existing rows keep whatever grouping they had.
+    project_id TEXT,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
 );
 
@@ -3707,6 +3720,7 @@ class SessionDB:
         cwd: str = None,
         profile_name: str = None,
         git_repo_root: str = None,
+        project_id: str = None,
     ) -> None:
         """Insert a session row, enriching NULL metadata on conflict.
 
@@ -3748,9 +3762,9 @@ class SessionDB:
                 """INSERT INTO sessions (
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
                    model, model_config, system_prompt, parent_session_id, cwd,
-                   profile_name, git_repo_root, started_at
+                   profile_name, git_repo_root, project_id, started_at
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = COALESCE(sessions.model_config, excluded.model_config),
@@ -3762,7 +3776,8 @@ class SessionDB:
                        parent_session_id = COALESCE(sessions.parent_session_id, excluded.parent_session_id),
                        cwd = COALESCE(sessions.cwd, excluded.cwd),
                        profile_name = COALESCE(sessions.profile_name, excluded.profile_name),
-                       git_repo_root = COALESCE(sessions.git_repo_root, excluded.git_repo_root)""",
+                       git_repo_root = COALESCE(sessions.git_repo_root, excluded.git_repo_root),
+                       project_id = COALESCE(sessions.project_id, excluded.project_id)""",
                 (
                     session_id,
                     source,
@@ -3778,6 +3793,7 @@ class SessionDB:
                     cwd,
                     profile_name,
                     git_repo_root,
+                    project_id,
                     time.time(),
                 ),
             )
@@ -3795,7 +3811,16 @@ class SessionDB:
                                           WHERE p.id = sessions.parent_session_id)),
                            profile_name = COALESCE(sessions.profile_name,
                                           (SELECT p.profile_name FROM sessions p
-                                            WHERE p.id = sessions.parent_session_id))
+                                            WHERE p.id = sessions.parent_session_id)),
+                           -- FORK: a child must inherit the parent's project.
+                           -- Compression forks, branches and delegate/subagent
+                           -- spawns all create rows without one, so without this a
+                           -- long session would drop out of its project the moment
+                           -- it compressed — the same class of silent loss as the
+                           -- mutable-cwd bug this column exists to fix.
+                           project_id = COALESCE(sessions.project_id,
+                                        (SELECT p.project_id FROM sessions p
+                                          WHERE p.id = sessions.parent_session_id))
                      WHERE id = ? AND parent_session_id IS NOT NULL""",
                     (session_id,),
                 )
@@ -9496,6 +9521,27 @@ class SessionDB:
         if deleted:
             self._remove_session_files(sessions_dir, session_id)
         return bool(deleted)
+
+    def session_ids_for_project(self, project_id: str) -> List[str]:
+        """FORK: ids of sessions whose STORED project_id is *project_id*.
+
+        Only explicit membership counts. Sessions that merely sit inside the
+        project's folders are excluded: that grouping is inferred from a mutable
+        cwd, never stated by the user, so a caller deleting a project must not
+        destroy conversations that were only ever path-matched into it.
+
+        Returns [] for a blank id rather than matching NULL rows — otherwise
+        deleting one project would sweep up every project-less session.
+        """
+        pid = (project_id or "").strip()
+        if not pid:
+            return []
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM sessions WHERE project_id = ?", (pid,)
+            ).fetchall()
+        return [r["id"] for r in rows]
 
     def delete_sessions(
         self,

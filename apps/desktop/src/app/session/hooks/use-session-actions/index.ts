@@ -15,6 +15,8 @@ import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import {
+  $projectScope,
+  ALL_PROJECTS,
   beginSessionMutation,
   endSessionMutation,
   resolveNewSessionCwd,
@@ -171,10 +173,23 @@ async function desktopSessionCreateParams(cwd: string): Promise<Record<string, u
   const profile = $newChatProfile.get() ?? normalizeProfileKey($activeGatewayProfile.get())
   await ensureGatewayProfile(profile)
 
+  // FORK: stamp the project this chat is being started in, so membership is
+  // RECORDED rather than re-derived from the cwd on every sidebar refresh. cwd is
+  // mutable — the agent moves it as it works — so a chat started in a project used
+  // to leave that project silently the moment the agent cd'd or cloned outside the
+  // project's folders. Read at the same linearization point as the model selection
+  // above, for the same reason: the profile handshake yields.
+  //
+  // ALL_PROJECTS (the "everything" view) is not a project, so it stays unset and
+  // the session is genuinely project-less.
+  const scope = $projectScope.get()
+  const projectId = scope && scope !== ALL_PROJECTS ? scope.trim() : ''
+
   return {
     cols: 96,
     source: 'desktop',
     ...(cwd && { cwd }),
+    ...(projectId ? { project_id: projectId } : {}),
     ...(profile ? { profile } : {}),
     ...(selection.model
       ? { model: selection.model, ...(selection.provider ? { provider: selection.provider } : {}) }

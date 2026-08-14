@@ -2476,28 +2476,55 @@ def _ensure_session_db_row(session: dict) -> None:
     parent_session_id = session.get("parent_session_id") or None
     if parent_session_id:
         model_config["_branched_from"] = parent_session_id
+    kwargs = dict(
+        source=_session_source(session),
+        model=row_model,
+        model_config=model_config or None,
+        parent_session_id=parent_session_id,
+        cwd=_persisted_session_cwd(session),
+        # Self-describing rows: aggregators that merge multiple profile DBs
+        # into one list can't rely on which file a row came from alone. NULL
+        # means the launch/default profile (matches run_agent's convention).
+        profile_name=Path(profile_home).name if profile_home else None,
+    )
+    # FORK: the owning project, recorded once. Membership used to be recomputed
+    # from `cwd` on every tree build, and cwd MOVES as the agent works — so a
+    # chat started inside a project silently left it the moment the agent cd'd
+    # or cloned outside the project's folders. NULL means the session was not
+    # started in a project; those still fall back to cwd-derived grouping.
+    #
+    # Passed only when set. SessionDB.create_session defaults project_id to
+    # None, so omitting it and sending None are the same row — but any DB-ish
+    # object with a narrower signature (test doubles, an older SessionDB on a
+    # half-updated install) raises TypeError on the unexpected kwarg, and the
+    # except below would swallow it and silently skip the INSERT entirely.
+    if project_id := (session.get("project_id") or None):
+        kwargs["project_id"] = project_id
+    # This function must never raise: three of its four call sites are not
+    # wrapped in a try, and prompt.submit is one of them.
     try:
-        db.create_session(
-            key,
-            source=_session_source(session),
-            model=row_model,
-            model_config=model_config or None,
-            parent_session_id=parent_session_id,
-            cwd=_persisted_session_cwd(session),
-            # Self-describing rows: aggregators that merge multiple profile DBs
-            # into one list can't rely on which file a row came from alone. NULL
-            # means the launch/default profile (matches run_agent's convention).
-            profile_name=Path(profile_home).name if profile_home else None,
-            # FORK: the owning project, recorded once. Membership used to be
-            # recomputed from `cwd` on every tree build, and cwd MOVES as the agent
-            # works — so a chat started inside a project silently left it the moment
-            # the agent cd'd or cloned outside the project's folders. NULL means the
-            # session was not started in a project; those still fall back to
-            # cwd-derived grouping.
-            project_id=session.get("project_id") or None,
-        )
+        db.create_session(key, **kwargs)
+    except TypeError:
+        # An unexpected-kwarg TypeError means this db predates a field we send,
+        # not that persisting is impossible. Retry without the fork-only field
+        # so the row still lands rather than being dropped.
+        if "project_id" not in kwargs:
+            logger.warning("failed to persist session row", exc_info=True)
+        else:
+            logger.warning(
+                "create_session rejected project_id (%s); retrying without it",
+                type(db).__name__,
+            )
+            kwargs.pop("project_id")
+            try:
+                db.create_session(key, **kwargs)
+            except Exception:
+                logger.warning("failed to persist session row", exc_info=True)
     except Exception:
-        logger.debug("failed to persist desktop session row", exc_info=True)
+        # WARNING, not DEBUG: a session that never persists is one the user
+        # loses on resume. At debug level this hid a signature mismatch that
+        # silently skipped every INSERT (see the project_id note above).
+        logger.warning("failed to persist session row", exc_info=True)
     finally:
         if close_db:
             try:

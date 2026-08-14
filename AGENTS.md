@@ -37,16 +37,33 @@ commit count as a reason to merge. If he asks whether anything big happened, ans
 by reading the upstream log; otherwise leave it alone. He knows the trade: the longer
 he waits, the more a future merge costs, and he accepted that.
 
-**Never commit to `main`.** The workflow is fixed: cut a fresh branch, make the
-change, run the tests, report what passed and what failed, then **wait for windro to
-approve**. He merges, or tells you to. Do not merge on your own initiative.
+**`main` is production. `dev` is where work lands.** `main` is what the installers
+clone and what `hermes update` and the desktop's Update button pull from
+(`hermes_fork.FORK_DEFAULT_BRANCH`, `install.ps1 -Branch`, `install.sh BRANCH`,
+`DEFAULT_UPDATE_BRANCH` in `apps/desktop/electron/main.ts`). A bad commit on `main`
+is a bad commit on windro's running install, so `main` only ever advances by a
+reviewed PR from `dev`. Do not change which branch is the default — those five
+hardcoded references all assume `main`, and `resolveHealedBranch` falls back to it
+when a tracked branch disappears.
+
+**Never commit to `main`, and never push to it.** The workflow is fixed: cut a
+fresh branch off `dev`, make the change, run the tests, report what passed and
+what failed, then **wait for windro to approve**. Merge to `dev`; `dev` reaches
+`main` by PR only. He merges, or tells you to. Do not merge on your own initiative.
+
+Direct pushes to `main` are blocked by branch protection, so an attempt fails
+loudly rather than quietly landing. `dev` is also covered by CI (it is in
+`ci.yml`'s push list) — a green run there is the evidence a `dev → main` PR needs.
 
 **Check whether this checkout is his live install — do not assume it.** Some checkouts
 are: repo and running app in the same folder, so code you edit is the app he uses daily.
-Others are not. `C:\wnx-projects\personal\hermes` (cloned 2026-08-08) has no venv and no
-`AppData\Local\hermes`, so nothing here is running. Decide by looking, not by trusting
-this line. Where it IS the live install, renderer or Electron changes need a rebuild
-before they take effect:
+Others are not. `C:\wnx-projects\personal\hermes` is his **dev** checkout: it has a
+`.venv/` (note the dot — not `venv/`), and the live managed install is a *separate*
+clone at `AppData\Local\hermes\hermes-agent` with its own `venv/`, which is what
+`which hermes` resolves to. So editing here does not change the running app until
+that install is updated. Decide by looking, not by trusting this line. Where it IS
+the live install, renderer or Electron changes need a rebuild before they take
+effect:
 `venv/Scripts/python.exe -m hermes_cli.main desktop --build-only --force-build`.
 
 **His data is outside the repo** in `AppData\Local\hermes\` — sessions, profiles,
@@ -56,8 +73,16 @@ config, auth, memories. Never edit, move, or clean anything there. Back it up wi
 **Never run `tests/hermes_cli/test_cmd_update.py`.** On this machine it spawns real
 `hermes gateway run` processes and leaks them — it once left 56 strays behind.
 
-**Windows box.** Python is `venv/Scripts/python.exe`. `scripts/run_tests.sh` does not
-work here; call `pytest` directly. Desktop tests are `npm test` in `apps/desktop`.
+**Windows box.** Python is `.venv/Scripts/python.exe` in the dev checkout
+(`venv/Scripts/python.exe` in the managed install). `scripts/run_tests.sh` does not
+work here; call `pytest` directly. Desktop tests are `npm test` in `apps/desktop`,
+or `npx vitest run <file>` for a single file — the npm workspace deps are installed
+at the repo root, not under `apps/desktop`.
+
+**Some upstream tests fail on Windows for path reasons, not because you broke
+them.** `tests/hermes_cli/test_projects_db.py` has 7 failures asserting POSIX paths
+(`/tmp/hermes`) that Windows normalizes to `C:\tmp\hermes`. Confirm a failure exists
+on `main` before spending time on it.
 
 **Keep patches small and obvious.** Every line this fork adds to an upstream file is
 a future merge conflict. Prefer new fork-owned files. When you must touch an upstream
@@ -81,11 +106,24 @@ entries relevant to what you are working on. Re-read them when you come back. Do
 rely on rediscovering them — context gets dropped, and an agent that has forgotten
 these rules is exactly the agent that pushes to the wrong remote.
 
-**Current work:** nothing in flight. The UI latency work is finished — merged to `main`
-in `8b819e69e` and the branch deleted, so do not go looking for `perf/ui-latency`. See
-`fork/changelog/entries/2026-08-04-09-ui-perf-four-fixes.md`. Upstream's own
-`apps/desktop/scripts/profile-typing-lag.md` is still stale — the incremental markdown
-lexing it calls unfixed landed in commit `bd4953b30`. Verify before trusting docs.
+**Current work:** the `dev` branch workflow is being adopted — see
+`fork/changelog/entries/2026-08-14-02-dev-branch-workflow.md`. Do not go looking for
+`perf/ui-latency`, `fix/common-bugs`, or `feat/nested-projects`; all three are merged
+and deleted. Read `git branch -a` rather than this line, which goes stale.
+
+**Known broken on `main`:** 8 tests in `tests/test_tui_gateway_server.py` fail because
+of two fork commits, and CI has been red on every push since. `5940ca566` changed the
+unconfirmed-truncation error code to 4029 while the upstream test still asserts 4028
+(`:3447`), and `26cd4d9a7` added `project_id=` to the `db.create_session(...)` call
+(`tui_gateway/server.py:2497`) that upstream's test fake does not accept — the
+resulting TypeError is swallowed by the `except Exception` below it, so the row is
+never written and 6 tests see an empty list. Production is unaffected because the real
+`SessionDB.create_session` takes `**kwargs`, but that swallow hides genuine persist
+failures. This is the first PR through the new flow.
+
+Upstream's own `apps/desktop/scripts/profile-typing-lag.md` is still stale — the
+incremental markdown lexing it calls unfixed landed in commit `bd4953b30`. Verify
+before trusting docs.
 
 <!-- ===== FORK-RULES: END ===== -->
 

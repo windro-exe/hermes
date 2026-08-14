@@ -163,7 +163,10 @@ async fn run_update(app: AppHandle) -> Result<()> {
         None
     };
 
-    let hermes = resolve_hermes(&install_root).ok_or_else(|| {
+    // FORK: `cli_prefix` is `["-m", "hermes_cli.main"]` when we drive the venv
+    // python directly (the normal case) and empty when falling back to the shim.
+    // See resolve_hermes_invocation for why the shim cannot drive its own update.
+    let (hermes, cli_prefix) = resolve_hermes_invocation(&install_root).ok_or_else(|| {
         let msg = format!(
             "Could not find the hermes CLI under {}. Is Hermes installed? \
              Re-run the installer to repair the install.",
@@ -223,8 +226,8 @@ async fn run_update(app: AppHandle) -> Result<()> {
         &format!("[update] updating against branch {update_branch}"),
     );
     let child_env = update_child_env(&install_root);
-    let mut update_args: Vec<String> =
-        vec!["update".into(), "--yes".into(), "--gateway".into()];
+    let mut update_args: Vec<String> = cli_prefix.clone();
+    update_args.extend(["update".to_string(), "--yes".to_string(), "--gateway".to_string()]);
     // --force skips `hermes update`'s Windows running-exe guard (which would
     // `sys.exit(2)` and dead-end the handoff). By contract the desktop has
     // already exited and waited for the install locks to clear before launching
@@ -344,7 +347,8 @@ async fn run_update(app: AppHandle) -> Result<()> {
     // repo-root deps with --workspaces=false). This is the rebuild it skips.
     emit_stage(&app, "rebuild", StageState::Running, None, None);
     let started = Instant::now();
-    let rebuild_args: Vec<String> = vec!["desktop".into(), "--build-only".into()];
+    let mut rebuild_args: Vec<String> = cli_prefix.clone();
+    rebuild_args.extend(["desktop".to_string(), "--build-only".to_string()]);
     let mut rebuild = run_streamed(
         &app,
         &hermes,
@@ -708,6 +712,45 @@ fn venv_hermes(install_root: &Path) -> PathBuf {
     } else {
         install_root.join("venv").join("bin").join("hermes")
     }
+}
+
+fn venv_python(install_root: &Path) -> PathBuf {
+    if cfg!(target_os = "windows") {
+        install_root.join("venv").join("Scripts").join("python.exe")
+    } else {
+        install_root.join("venv").join("bin").join("python")
+    }
+}
+
+/// FORK: how to invoke the Hermes CLI without holding the file the update must
+/// replace.
+///
+/// Returns `(program, leading_args)`.
+///
+/// Driving the update through `venv\Scripts\hermes.exe` was self-defeating on
+/// Windows: `hermes update` runs `uv pip install -e .`, which rewrites the
+/// entry-point shims — including the very `hermes.exe` the update is executing
+/// from. Windows locks a running image against replacement, so uv failed with
+///
+///   failed to remove file venv\Scripts\hermes.exe: The process cannot access the
+///   file because it is being used by another process. (os error 32)
+///
+/// which the CLI then escalated into a full ZIP re-download that stalled for
+/// minutes. `_quarantine_running_hermes_exe` exists to pre-empt this by renaming
+/// the live shim, but it loses to an AV scanner holding a transient handle — and
+/// `--force` does not help, because the holder is the updater itself.
+///
+/// Waiting for the desktop to exit (stage 1) can never fix this: the process
+/// holding the shim IS this update. Running `python -m hermes_cli.main` instead
+/// keeps only `python.exe` open, which nothing in the update rewrites, so the
+/// lock cannot arise. Falls back to the shim when the venv python is missing, so
+/// a damaged install still gets the previous behaviour rather than no update.
+fn resolve_hermes_invocation(install_root: &Path) -> Option<(PathBuf, Vec<String>)> {
+    let python = venv_python(install_root);
+    if python.exists() {
+        return Some((python, vec!["-m".into(), "hermes_cli.main".into()]));
+    }
+    resolve_hermes(install_root).map(|shim| (shim, Vec::new()))
 }
 
 /// Resolve the hermes CLI to drive. Prefer the venv shim in the install we

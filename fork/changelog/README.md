@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-14 | Fixed | [The last three CI failures: exact-argv test doubles, and a guard the mocks tripped](entries/2026-08-14-04-ci-green-exact-argv-tests.md) | current |
 | 2026-08-14 | Fixed | [A swallowed TypeError meant session rows were never written, and CI stayed red](entries/2026-08-14-03-tui-gateway-server-tests.md) | current |
 | 2026-08-14 | Changed | [`main` becomes production; work lands on `dev` and reaches `main` by PR only](entries/2026-08-14-02-dev-branch-workflow.md) | current |
 | 2026-08-14 | Added | [Projects nest: identity is a path of slugs, unlimited depth](entries/2026-08-14-01-nested-projects.md) | current |

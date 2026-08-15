@@ -161,17 +161,27 @@ def test_fs_default_cwd_prefers_existing_terminal_cwd(client, tmp_path, monkeypa
 
 
 def test_fs_default_cwd_falls_back_when_terminal_cwd_is_invalid(client, tmp_path, monkeypatch):
-    fallback = tmp_path / "backend"
-    fallback.mkdir()
+    """An unusable terminal.cwd falls back to HOME, not the process directory.
+
+    FORK: `c802ad5bc` changed this deliberately. `Path.cwd()` is wherever the
+    backend happened to be launched, so with the common `terminal.cwd: .` the
+    file browser opened an arbitrary directory. `gateway/cwd_placeholder.py` is
+    the canonical resolver and it answers "home", so `_fs_default_cwd` matches
+    it. The process cwd is asserted to be IGNORED here — that is the whole point
+    of the change, and pinning it is what stops the drift coming back.
+    """
+    process_cwd = tmp_path / "backend"
+    process_cwd.mkdir()
     monkeypatch.setattr(web_server, "load_config", lambda: {"terminal": {"cwd": "/client/missing"}})
     monkeypatch.setenv("TERMINAL_CWD", "/client/missing")
-    monkeypatch.setattr(web_server.Path, "cwd", lambda: fallback)
+    monkeypatch.setattr(web_server.Path, "cwd", lambda: process_cwd)
     monkeypatch.setattr(web_server, "_fs_git_branch", lambda cwd: "")
 
     response = client.get("/api/fs/default-cwd")
 
     assert response.status_code == 200
-    assert response.json() == {"cwd": str(fallback), "branch": ""}
+    assert response.json() == {"cwd": str(Path.home()), "branch": ""}
+    assert response.json()["cwd"] != str(process_cwd)
 
 
 def test_fs_endpoints_require_auth(tmp_path):

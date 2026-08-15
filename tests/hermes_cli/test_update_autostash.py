@@ -9,6 +9,34 @@ from hermes_cli import config as hermes_config
 from hermes_cli import main as hermes_main
 
 
+def git_args(cmd) -> list:
+    """A git argv reduced to its arguments, with any global ``-c k=v`` dropped.
+
+    FORK: ``cmd_update`` builds ``git_cmd`` as ``["git", "-c",
+    "windows.appendAtomically=false"]`` on win32 and plain ``["git"]``
+    elsewhere. Tests that matched an exact argv (``cmd == ["git", "fetch",
+    "origin", "main"]``) therefore only ever matched on POSIX; on Windows the
+    branch silently fell through to the catch-all, which returns ``stdout=""``,
+    and the update then crashed on ``int("")`` while parsing the commit count.
+
+    Comparing ``git_args(cmd)`` instead keeps the assertion about the git
+    operation — the thing under test — and drops the platform's transport
+    detail, so these tests are meaningful on both platforms rather than green on
+    one and broken on the other.
+    """
+    parts = [str(part) for part in cmd]
+    if not parts or not parts[0].endswith("git"):
+        return parts
+    args, index = [], 1
+    while index < len(parts):
+        if parts[index] == "-c":
+            index += 2  # skip the flag and its key=value payload
+            continue
+        args.append(parts[index])
+        index += 1
+    return args
+
+
 # ---------------------------------------------------------------------------
 # Managed-uv compatibility for tests that patch shutil.which
 # ---------------------------------------------------------------------------
@@ -412,13 +440,13 @@ def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypa
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin", "main"]:
+        if git_args(cmd) == git_args(["git", "fetch", "origin", "main"]):
             return SimpleNamespace(stdout="", stderr="", returncode=0)
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        if git_args(cmd) == git_args(["git", "rev-parse", "--abbrev-ref", "HEAD"]):
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if git_args(cmd) == git_args(["git", "rev-list", "HEAD..origin/main", "--count"]):
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if git_args(cmd) == git_args(["git", "pull", "--ff-only", "origin", "main"]):
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         if cmd == ["/usr/bin/uv", "pip", "install", "-e", ".[all]"]:
             raise CalledProcessError(returncode=1, cmd=cmd)
@@ -461,13 +489,13 @@ def test_cmd_update_succeeds_with_extras(monkeypatch, tmp_path):
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin", "main"]:
+        if git_args(cmd) == git_args(["git", "fetch", "origin", "main"]):
             return SimpleNamespace(stdout="", stderr="", returncode=0)
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        if git_args(cmd) == git_args(["git", "rev-parse", "--abbrev-ref", "HEAD"]):
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if git_args(cmd) == git_args(["git", "rev-list", "HEAD..origin/main", "--count"]):
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if git_args(cmd) == git_args(["git", "pull", "--ff-only", "origin", "main"]):
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -553,11 +581,11 @@ def test_cmd_update_refreshes_active_memory_provider_dependencies(monkeypatch, t
     )
 
     def fake_run(cmd, **kwargs):
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        if git_args(cmd) == git_args(["git", "rev-parse", "--abbrev-ref", "HEAD"]):
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if git_args(cmd) == git_args(["git", "rev-list", "HEAD..origin/main", "--count"]):
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if git_args(cmd) == git_args(["git", "pull", "--ff-only", "origin", "main"]):
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -623,12 +651,30 @@ def test_install_heartbeat_prints_when_dependency_install_is_silent(monkeypatch,
 def _make_update_side_effect(
     current_branch="main",
     commit_count="3",
+    ahead_count="0",
     ff_only_fails=False,
     reset_fails=False,
     fetch_fails=False,
     fetch_stderr="",
 ):
-    """Build a subprocess.run side_effect for cmd_update tests."""
+    """Build a subprocess.run side_effect for cmd_update tests.
+
+    FORK: ``rev-list --count`` is asked TWO different questions by the update
+    path, and they must not share one answer:
+
+    * ``HEAD..origin/<branch>`` — how many new commits the remote has. That is
+      ``commit_count``, and a non-zero value is what makes an update proceed.
+    * ``origin/<branch>..HEAD`` — how many local commits are NOT on the remote,
+      via ``_count_commits_not_on_remote``. That is ``ahead_count``, and a
+      non-zero value makes the update REFUSE, because resetting would delete
+      work that exists nowhere else (guard added in `fix/update-unpushed-guard`,
+      see fork/changelog/entries/2026-08-02-03-update-unpushed-guard.md).
+
+    The single ``"rev-list" in joined`` branch answered ``commit_count`` to both,
+    so every test asking for "3 new commits upstream" was also claiming "3
+    unpushed local commits" and tripped the guard. ``ahead_count`` defaults to
+    "0" — nothing unpushed — which is the state these tests actually describe.
+    """
     recorded = []
 
     def side_effect(cmd, **kwargs):
@@ -643,6 +689,16 @@ def _make_update_side_effect(
         if "checkout" in joined and "main" in joined:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if "rev-list" in joined:
+            # Direction decides the meaning, and it must be matched on the RANGE
+            # TOKEN, not with a substring test. "HEAD..origin/main" also
+            # *contains* "..HEAD", so `"..HEAD" in joined` answers the
+            # local-only count to the incoming-count question and every
+            # extras/dependency test blows up on int("").
+            if any(
+                str(part).endswith("..HEAD") and str(part).startswith("origin/")
+                for part in cmd
+            ):
+                return SimpleNamespace(stdout=f"{ahead_count}\n", stderr="", returncode=0)
             return SimpleNamespace(stdout=f"{commit_count}\n", stderr="", returncode=0)
         if "--ff-only" in joined:
             if ff_only_fails:
@@ -673,7 +729,12 @@ def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path
 
     reset_calls = [c for c in recorded if "reset" in c and "--hard" in c]
     assert len(reset_calls) == 1
-    assert reset_calls[0] == ["git", "reset", "--hard", "origin/main"]
+    # Assert the git ARGUMENTS, not the whole argv: on Windows the update
+    # prefixes every git call with `-c windows.appendAtomically=false`
+    # (hermes_cli/main.py builds git_cmd that way), so an exact-argv comparison
+    # could only ever pass on POSIX.
+    assert reset_calls[0][0] == "git"
+    assert reset_calls[0][-3:] == ["reset", "--hard", "origin/main"]
 
     out = capsys.readouterr().out
     assert "Fast-forward not possible" in out
@@ -793,8 +854,10 @@ def test_cmd_update_fetch_is_scoped_to_target_branch(monkeypatch, tmp_path):
     hermes_main.cmd_update(SimpleNamespace())
 
     fetch_calls = [c for c in recorded if "fetch" in c]
-    assert fetch_calls == [["git", "fetch", "origin", "main"]]
-    assert ["git", "fetch", "origin"] not in recorded
+    # git_args() so the Windows `-c windows.appendAtomically=false` prefix does
+    # not decide the result — the point is that the fetch names the branch.
+    assert [git_args(c) for c in fetch_calls] == [["fetch", "origin", "main"]]
+    assert ["fetch", "origin"] not in [git_args(c) for c in recorded]
 
 
 # ---------------------------------------------------------------------------

@@ -104,24 +104,24 @@ import {
 } from './git-review-ops'
 import { gitRootForIpc } from './git-root'
 import {
-  cloneRepo as githubCloneRepo,
-  pollDeviceFlow as githubPollDeviceFlow,
-  startDeviceFlow as githubStartDeviceFlow,
-  connectRemote as githubConnectRemote,
-  createRepo as githubCreateRepo,
-  identify as githubIdentify,
-  listRepos as githubListRepos
-} from './github-ops'
-import {
   addWorktree,
   ensureGitRepo,
   listBaseBranches,
-  listRemotes,
   listBranches,
+  listRemotes,
   listWorktrees,
   removeWorktree,
   switchBranch
 } from './git-worktree-ops'
+import {
+  cloneRepo as githubCloneRepo,
+  connectRemote as githubConnectRemote,
+  createRepo as githubCreateRepo,
+  identify as githubIdentify,
+  listRepos as githubListRepos,
+  pollDeviceFlow as githubPollDeviceFlow,
+  startDeviceFlow as githubStartDeviceFlow
+} from './github-ops'
 import {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,

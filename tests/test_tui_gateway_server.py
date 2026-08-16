@@ -3433,6 +3433,14 @@ def test_prompt_submit_refuses_empty_truncation_without_confirm(monkeypatch):
 
     try:
         # Missing confirm → refuse.
+        #
+        # FORK: 4029, not 4028. This fork added an earlier, broader guard that
+        # refuses ANY unconfirmed truncation (see truncation_confirmed), and it
+        # runs before the empty-truncation check below. A submit carrying no
+        # confirmation at all is therefore caught by the broader guard first, so
+        # the code is 4029 and the message names confirm_truncate. 4028 is still
+        # live and still reachable — it fires when confirm_truncate IS set but
+        # the cut would empty the transcript (asserted below).
         resp = server.handle_request(
             {
                 "id": "1",
@@ -3444,8 +3452,8 @@ def test_prompt_submit_refuses_empty_truncation_without_confirm(monkeypatch):
                 },
             }
         )
-        assert resp["error"]["code"] == 4028
-        assert "confirm_empty_truncate" in resp["error"]["message"]
+        assert resp["error"]["code"] == 4029
+        assert "confirm_truncate" in resp["error"]["message"]
         # Explicit falsey values must not satisfy the opt-in either.
         for falsey in (False, 0, "", "false", "no"):
             resp = server.handle_request(
@@ -3460,7 +3468,24 @@ def test_prompt_submit_refuses_empty_truncation_without_confirm(monkeypatch):
                     },
                 }
             )
-            assert resp["error"]["code"] == 4028, falsey
+            assert resp["error"]["code"] == 4029, falsey
+        # Confirming the truncation still does not license emptying the
+        # transcript: the 4028 empty-truncation guard owns that case, which is
+        # what this test was originally written to pin.
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "prompt.submit",
+                "params": {
+                    "session_id": "empty-trunc-sid",
+                    "text": "fresh typed message",
+                    "truncate_before_user_ordinal": 0,
+                    "confirm_truncate": True,
+                },
+            }
+        )
+        assert resp["error"]["code"] == 4028
+        assert "confirm_empty_truncate" in resp["error"]["message"]
         assert server._sessions["empty-trunc-sid"]["history"] == history
         assert server._sessions["empty-trunc-sid"]["running"] is False
         assert server._sessions["empty-trunc-sid"]["history_version"] == 0
@@ -7954,6 +7979,12 @@ def test_prompt_submit_can_truncate_before_user_ordinal(monkeypatch):
                     "session_id": "sid",
                     "text": "edited second",
                     "truncate_before_user_ordinal": 1,
+                    # FORK: an intentional rewind must say so. This fork refuses
+                    # ANY unconfirmed truncation (4029) because a stale client
+                    # carrying a leftover ordinal would otherwise silently drop
+                    # the tail of the transcript. This repo's client always sends
+                    # the flag alongside an ordinal, so this matches real traffic.
+                    "confirm_truncate": True,
                 },
             }
         )

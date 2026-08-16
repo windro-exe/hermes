@@ -332,6 +332,7 @@ export const migrateQueuedPrompts = (fromKey: string | null | undefined, toKey: 
     if (foreign.length === 0) {
       setParked(from, false)
     }
+
     setParked(to, true)
   }
 

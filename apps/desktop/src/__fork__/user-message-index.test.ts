@@ -118,17 +118,12 @@ describe('the shared index matches the per-bubble walk', () => {
 
 describe('the source actually shares the work', () => {
   const source = async () =>
-    (await import('fs')).readFileSync(
-      'src/components/assistant-ui/thread/user-message.tsx',
-      'utf8'
-    )
+    (await import('fs')).readFileSync('src/components/assistant-ui/thread/user-message.tsx', 'utf8')
 
   it('uses a WeakMap keyed on the messages array', async () => {
     const src = await source()
 
-    expect(src, 'a Map here would pin every transcript it ever saw').toContain(
-      'new WeakMap<'
-    )
+    expect(src, 'a Map here would pin every transcript it ever saw').toContain('new WeakMap<')
     expect(src).toContain('userMessageIndex')
   })
 
@@ -142,8 +137,6 @@ describe('the source actually shares the work', () => {
 
     const selectors = src.slice(start, end)
 
-    expect(selectors, 'a loop back inside the selector restores the O(U x N) cost').not.toMatch(
-      /for\s*\(/
-    )
+    expect(selectors, 'a loop back inside the selector restores the O(U x N) cost').not.toMatch(/for\s*\(/)
   })
 })

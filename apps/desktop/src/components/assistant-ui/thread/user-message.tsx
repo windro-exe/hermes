@@ -23,10 +23,7 @@ import { isWatchWindow } from '@/store/windows'
  * in a WeakMap: recomputed exactly when the array identity changes, and holds no
  * strong reference so a replaced transcript is collectable.
  */
-const userIndexCache = new WeakMap<
-  readonly unknown[],
-  { latestUserId: null | string; ordinals: Map<string, number> }
->()
+const userIndexCache = new WeakMap<readonly unknown[], { latestUserId: null | string; ordinals: Map<string, number> }>()
 
 function userMessageIndex(messages: readonly unknown[]): {
   latestUserId: null | string
@@ -62,7 +59,6 @@ function userMessageIndex(messages: readonly unknown[]): {
 
   return result
 }
-
 
 export function StickyHumanMessageContainer({
   attachments,

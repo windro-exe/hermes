@@ -89,10 +89,7 @@ describe('arrangeProjectRows', () => {
   })
 
   it('survives a parentId cycle', () => {
-    const rows = arrangeProjectRows(
-      [project('a', { parentId: 'b' }), project('b', { parentId: 'a' })],
-      allOpen
-    )
+    const rows = arrangeProjectRows([project('a', { parentId: 'b' }), project('b', { parentId: 'a' })], allOpen)
 
     // Both are reachable as roots-of-last-resort; neither recurses forever.
     expect(ids(rows).sort()).toEqual(['a', 'b'])
@@ -120,19 +117,13 @@ describe('subtree-inclusive ordering', () => {
     const namespace = project('official', { lastActive: 9000, totalSessionCount: 4 })
     const empty = project('idle', { lastActive: 0 })
 
-    expect(sortProjectsForOverview([empty, namespace], null).map(p => p.id)).toEqual([
-      'official',
-      'idle'
-    ])
+    expect(sortProjectsForOverview([empty, namespace], null).map(p => p.id)).toEqual(['official', 'idle'])
   })
 
   it('does not sink a namespace project below a hand-ordered list', () => {
     const namespace = project('official', { totalSessionCount: 2 })
     const ordered = project('ordered')
 
-    expect(orderProjectsByIds([ordered, namespace], ['ordered']).map(p => p.id)).toEqual([
-      'official',
-      'ordered'
-    ])
+    expect(orderProjectsByIds([ordered, namespace], ['ordered']).map(p => p.id)).toEqual(['official', 'ordered'])
   })
 })

@@ -16,13 +16,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  $activeSessionCwd,
-  $activeSessionId,
-  $currentCwd,
-  $selectedStoredSessionId,
-  $sessions
-} from '@/store/session'
+import { $activeSessionCwd, $activeSessionId, $currentCwd, $selectedStoredSessionId, $sessions } from '@/store/session'
 import type { SessionInfo } from '@/types/hermes'
 
 const ASTHRA = 'C:\\Users\\wnxdd\\Documents\\Asthra HR admin'
@@ -107,24 +101,16 @@ describe('$activeSessionCwd', () => {
 
 describe('the surfaces that showed the wrong project', () => {
   it('the Files panel reads the session cwd', async () => {
-    const src = await import('fs').then(fs =>
-      fs.readFileSync('src/app/right-sidebar/index.tsx', 'utf8')
-    )
+    const src = await import('fs').then(fs => fs.readFileSync('src/app/right-sidebar/index.tsx', 'utf8'))
 
     expect(src).toContain('$activeSessionCwd')
-    expect(src, 'the Files panel must not read the persisted global directly').not.toMatch(
-      /useStore\(\$currentCwd\)/
-    )
+    expect(src, 'the Files panel must not read the persisted global directly').not.toMatch(/useStore\(\$currentCwd\)/)
   })
 
   it('the status bar reads the session cwd', async () => {
-    const src = await import('fs').then(fs =>
-      fs.readFileSync('src/app/shell/hooks/use-statusbar-items.tsx', 'utf8')
-    )
+    const src = await import('fs').then(fs => fs.readFileSync('src/app/shell/hooks/use-statusbar-items.tsx', 'utf8'))
 
     expect(src).toContain('$activeSessionCwd')
-    expect(src, 'the status bar must not read the persisted global directly').not.toMatch(
-      /useStore\(\$currentCwd\)/
-    )
+    expect(src, 'the status bar must not read the persisted global directly').not.toMatch(/useStore\(\$currentCwd\)/)
   })
 })

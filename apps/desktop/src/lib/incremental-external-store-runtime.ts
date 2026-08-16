@@ -169,8 +169,7 @@ export function syncRepositoryIncrementally(
   const existingParents = new Map(existing.map(({ message, parentId }) => [message.id, parentId ?? null]))
 
   const reparented = incoming.some(
-    ({ message, parentId }) =>
-      existingParents.has(message.id) && existingParents.get(message.id) !== (parentId ?? null)
+    ({ message, parentId }) => existingParents.has(message.id) && existingParents.get(message.id) !== (parentId ?? null)
   )
 
   // Steady-state streaming: same message set, one item changed. Skip the

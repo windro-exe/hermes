@@ -16,8 +16,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const readDesktopDir = vi.fn()
 const readDesktopFileText = vi.fn()
 
-const writeDesktopFileText =
-  vi.fn<(path: string, content: string) => Promise<{ path: string }>>(async path => ({ path }))
+const writeDesktopFileText = vi.fn<(path: string, content: string) => Promise<{ path: string }>>(async path => ({
+  path
+}))
 
 const trashDesktopPath = vi.fn(async () => undefined)
 

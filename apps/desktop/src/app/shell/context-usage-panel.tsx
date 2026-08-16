@@ -176,13 +176,7 @@ export function ContextUsagePanel({
 }
 
 /** The rules the agent is (or isn't) acting on, and why. */
-function ProjectRulesDetailView({
-  copy,
-  detail
-}: {
-  copy: typeof RULES_COPY_FALLBACK
-  detail: ProjectRulesDetail
-}) {
+function ProjectRulesDetailView({ copy, detail }: { copy: typeof RULES_COPY_FALLBACK; detail: ProjectRulesDetail }) {
   const stateLabel: Record<ProjectRuleDetail['state'], string> = {
     live: copy.stateLive,
     off: copy.stateOff,

@@ -154,11 +154,7 @@ declare global {
       // Rename a file/folder in place (new base name, same parent dir).
       renamePath?: (path: string, newName: string) => Promise<{ path: string }>
       // Write a small UTF-8 text file (hardened path, parent must exist).
-      writeTextFile?: (
-        path: string,
-        content: string,
-        options?: { mkdirp?: boolean }
-      ) => Promise<{ path: string }>
+      writeTextFile?: (path: string, content: string, options?: { mkdirp?: boolean }) => Promise<{ path: string }>
       // Move a file/folder to the OS trash (recoverable).
       trashPath?: (path: string) => Promise<boolean>
       /**
@@ -189,11 +185,7 @@ declare global {
           cloneUrl: string
           repoDir: string
         }) => Promise<{ ok: boolean; pushError: null | string; pushed: boolean }>
-        createRepo: (options: {
-          description?: string
-          name: string
-          private?: boolean
-        }) => Promise<HermesGitHubRepo>
+        createRepo: (options: { description?: string; name: string; private?: boolean }) => Promise<HermesGitHubRepo>
         disconnect: () => Promise<{ connected: boolean }>
         listRepos: () => Promise<HermesGitHubRepo[]>
         status: () => Promise<{ connected: boolean; error?: string; login: null | string; name?: null | string }>

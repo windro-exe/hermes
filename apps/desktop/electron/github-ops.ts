@@ -113,9 +113,7 @@ export async function startDeviceFlow(): Promise<DeviceFlowStart> {
  * the polling loop and can cancel. `slowDown` asks the caller to back off —
  * ignoring it gets the flow rate-limited, which presents as a mysterious failure.
  */
-export async function pollDeviceFlow(
-  deviceCode: string
-): Promise<{ slowDown?: boolean; token: null | string }> {
+export async function pollDeviceFlow(deviceCode: string): Promise<{ slowDown?: boolean; token: null | string }> {
   const body = await oauthForm<{
     access_token?: string
     error?: string

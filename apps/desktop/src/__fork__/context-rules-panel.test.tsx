@@ -66,9 +66,7 @@ function mount(bd: ContextBreakdown) {
 
   return {
     requestGateway,
-    ...render(
-      <ContextUsagePanel currentUsage={EMPTY_USAGE} requestGateway={requestGateway} sessionId="s1" />
-    )
+    ...render(<ContextUsagePanel currentUsage={EMPTY_USAGE} requestGateway={requestGateway} sessionId="s1" />)
   }
 }
 

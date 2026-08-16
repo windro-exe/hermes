@@ -119,7 +119,12 @@ describe('worktree probe path keying', () => {
     // and folding them would invent a branch label the backend never reported.
     const groups = mergeRepoWorktreeGroups(repo(), undefined)
 
-    expect(groups.filter(g => g.isMain).map(g => g.label).sort()).toEqual(['dev', 'main'])
+    expect(
+      groups
+        .filter(g => g.isMain)
+        .map(g => g.label)
+        .sort()
+    ).toEqual(['dev', 'main'])
   })
 
   it('does not fold a detached HEAD into a named home lane', () => {
@@ -129,7 +134,12 @@ describe('worktree probe path keying', () => {
       { branch: null, detached: true, isMain: true, locked: false, path: REPO_FROM_GIT }
     ])
 
-    expect(groups.filter(g => g.isMain).map(g => g.label).sort()).toEqual(['dev', 'main'])
+    expect(
+      groups
+        .filter(g => g.isMain)
+        .map(g => g.label)
+        .sort()
+    ).toEqual(['dev', 'main'])
   })
 })
 

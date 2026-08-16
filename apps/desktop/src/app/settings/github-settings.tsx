@@ -66,7 +66,13 @@ export function GitHubSettings() {
             >
               Copy
             </Button>
-            <Button className="ml-auto" onClick={() => cancelGitHubDeviceFlow()} size="sm" type="button" variant="ghost">
+            <Button
+              className="ml-auto"
+              onClick={() => cancelGitHubDeviceFlow()}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
               Cancel
             </Button>
           </div>
@@ -90,7 +96,13 @@ export function GitHubSettings() {
               {connection.error} Sign in again to reconnect.
             </span>
           )}
-          <Button className="self-start" disabled={busy} onClick={() => void signInWithGitHub()} size="sm" type="button">
+          <Button
+            className="self-start"
+            disabled={busy}
+            onClick={() => void signInWithGitHub()}
+            size="sm"
+            type="button"
+          >
             <Codicon name="github" size="0.75rem" />
             Sign in with GitHub
           </Button>

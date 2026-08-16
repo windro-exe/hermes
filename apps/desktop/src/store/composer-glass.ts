@@ -103,9 +103,7 @@ export function composerGlassVars(level: number): ComposerGlassVars {
   }
 }
 
-export const $composerGlass = atom<number>(
-  typeof window === 'undefined' ? COMPOSER_GLASS_DEFAULT : read()
-)
+export const $composerGlass = atom<number>(typeof window === 'undefined' ? COMPOSER_GLASS_DEFAULT : read())
 
 export function setComposerGlass(level: number): void {
   $composerGlass.set(clamp(level))

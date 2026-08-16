@@ -97,10 +97,7 @@ describe('when the toast fires', () => {
   it('never auto-dismisses itself', () => {
     maybeNotifyUpdateAvailable(status())
 
-    expect(
-      notify.mock.calls[0]?.[0]?.durationMs,
-      'a timed toast can vanish while the user is away'
-    ).toBe(0)
+    expect(notify.mock.calls[0]?.[0]?.durationMs, 'a timed toast can vanish while the user is away').toBe(0)
   })
 })
 

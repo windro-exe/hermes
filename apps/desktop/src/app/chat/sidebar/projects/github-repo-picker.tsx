@@ -102,13 +102,7 @@ export function GitHubRepoPicker({
         <span className="text-[0.625rem] text-(--ui-text-quaternary)">{pending.verificationUri}</span>
         <div className="flex items-center gap-2">
           <span className="text-[0.6875rem] text-(--ui-text-tertiary)">Waiting for approval…</span>
-          <Button
-            className="ml-auto"
-            onClick={() => cancelGitHubDeviceFlow()}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
+          <Button className="ml-auto" onClick={() => cancelGitHubDeviceFlow()} size="sm" type="button" variant="ghost">
             Cancel
           </Button>
         </div>
@@ -128,18 +122,14 @@ export function GitHubRepoPicker({
           Opens github.com in your browser. Nothing to copy or paste.
         </span>
         <details className="mt-1">
-          <summary className="cursor-pointer text-[0.6875rem] text-(--ui-text-tertiary)">
-            Use a token instead
-          </summary>
+          <summary className="cursor-pointer text-[0.6875rem] text-(--ui-text-tertiary)">Use a token instead</summary>
           <span className="mt-1 block text-[0.6875rem] text-(--ui-text-tertiary)">
             Paste a personal access token with <span className="font-medium">repo</span> access. Useful offline, or to
             scope a fine-grained token to a single repository. Stored encrypted by your operating system and never
             leaves this machine.
           </span>
         </details>
-        {connection.error && (
-          <span className="text-[0.6875rem] text-(--ui-text-danger)">{connection.error}</span>
-        )}
+        {connection.error && <span className="text-[0.6875rem] text-(--ui-text-danger)">{connection.error}</span>}
         <Input
           disabled={locked}
           onChange={event => setToken(event.target.value)}
@@ -282,7 +272,13 @@ export function GitHubRepoPicker({
               <Codicon name="add" size="0.75rem" />
               New repository
             </Button>
-            <Button disabled={locked} onClick={() => void loadGitHubRepos(true)} size="sm" type="button" variant="ghost">
+            <Button
+              disabled={locked}
+              onClick={() => void loadGitHubRepos(true)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
               Refresh
             </Button>
             <Button className="ml-auto" disabled={locked} onClick={onCancel} size="sm" type="button" variant="ghost">

@@ -166,6 +166,7 @@ export function arrangeProjectRows(
   // first (ignoring collapse) and treat them as roots: a corrupt edge should
   // cost the indent, not the project.
   const reachable = new Set<string>()
+
   const mark = (project: SidebarProjectTree): void => {
     if (reachable.has(project.id)) {
       return

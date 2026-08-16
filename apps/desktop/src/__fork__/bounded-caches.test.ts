@@ -118,17 +118,14 @@ describe('boundRecord', () => {
 })
 
 describe('the tool stores are bounded', () => {
-  const read = async (file: string) =>
-    (await import('fs')).readFileSync(`src/store/${file}`, 'utf8')
+  const read = async (file: string) => (await import('fs')).readFileSync(`src/store/${file}`, 'utf8')
 
   it('tool-diffs bounds both the record and the derived-atom cache', async () => {
     const src = await read('tool-diffs.ts')
 
     expect(src, 'diff TEXT must not accumulate for the whole session').toContain('boundRecord(')
     expect(src).toContain('BoundedMap<')
-    expect(src, 'a bare Map here is the leak').not.toMatch(
-      /const inlineDiffCache = new Map</
-    )
+    expect(src, 'a bare Map here is the leak').not.toMatch(/const inlineDiffCache = new Map</)
   })
 
   it('tool-view bounds its disclosure caches', async () => {

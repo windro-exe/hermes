@@ -96,16 +96,12 @@ describe('the cache is bounded', () => {
   it('does not grow without limit', async () => {
     const mod = await import('@/lib/markdown-preprocess')
 
-    const src = await import('fs').then(fs =>
-      fs.readFileSync('src/lib/markdown-preprocess.ts', 'utf8')
-    )
+    const src = await import('fs').then(fs => fs.readFileSync('src/lib/markdown-preprocess.ts', 'utf8'))
 
     // The bound is enforced in code; assert it exists rather than trying to
     // observe a private Map from outside.
     expect(src).toMatch(/PREPROCESS_CACHE_MAX\s*=\s*\d+/)
-    expect(src, 'an unbounded cache on message text is a memory leak').toMatch(
-      /preprocessCache\.delete\(/
-    )
+    expect(src, 'an unbounded cache on message text is a memory leak').toMatch(/preprocessCache\.delete\(/)
     expect(typeof mod.preprocessMarkdown).toBe('function')
   })
 

@@ -208,10 +208,7 @@ export function notifyError(error: unknown, fallback: string): string {
   })
 }
 
-export function dismissNotification(
-  id: string,
-  reason: NotificationDismissReason = 'programmatic'
-) {
+export function dismissNotification(id: string, reason: NotificationDismissReason = 'programmatic') {
   window.clearTimeout(timers.get(id))
   timers.delete(id)
   const dismissed = $notifications.get().find(item => item.id === id)

@@ -256,10 +256,7 @@ const ThreadMessageListInner: FC<ThreadMessageListProps> = ({
   // the long transcripts where the rebuild is most expensive. The
   // `hiddenCount === 0` path already returned the stable `groups` reference,
   // which is why this only bites past the budget.
-  const visibleGroups = useMemo(
-    () => (hiddenCount > 0 ? groups.slice(hiddenCount) : groups),
-    [groups, hiddenCount]
-  )
+  const visibleGroups = useMemo(() => (hiddenCount > 0 ? groups.slice(hiddenCount) : groups), [groups, hiddenCount])
 
   const restoreFromBottomRef = useRef<number | null>(null)
   // Secondary windows (new-session scratch, subagent watch, cmd-click pop-out)

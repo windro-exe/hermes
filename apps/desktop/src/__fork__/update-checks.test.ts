@@ -29,10 +29,9 @@ describe('background update checks', () => {
   it('the app entry starts them for the main window only', async () => {
     const src = await read('src/main.tsx')
 
-    expect(
-      src.includes('startBackgroundUpdateChecks'),
-      'src/main.tsx no longer starts background update checks.'
-    ).toBe(true)
+    expect(src.includes('startBackgroundUpdateChecks'), 'src/main.tsx no longer starts background update checks.').toBe(
+      true
+    )
 
     // The overlay and quick-entry windows share this entry point. Starting
     // checks for them too would toast the same update more than once.
@@ -70,8 +69,7 @@ describe('background update checks', () => {
     expect(src.includes('isUpdateToastSnoozed')).toBe(true)
     expect(
       src.includes('24 * 60 * 60 * 1000'),
-      'the toast cooldown changed — checking every few hours without a snooze ' +
-        'would nag on every check.'
+      'the toast cooldown changed — checking every few hours without a snooze ' + 'would nag on every check.'
     ).toBe(true)
   })
 

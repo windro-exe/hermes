@@ -68,8 +68,7 @@ const status = (over: Partial<DesktopUpdateStatus> = {}): DesktopUpdateStatus =>
   ...over
 })
 
-const lastToast = () =>
-  notifySpy.mock.calls.at(-1)?.[0] as { onDismiss: (reason?: string) => void }
+const lastToast = () => notifySpy.mock.calls.at(-1)?.[0] as { onDismiss: (reason?: string) => void }
 
 describe('maybeNotifyUpdateAvailable', () => {
   beforeEach(() => {

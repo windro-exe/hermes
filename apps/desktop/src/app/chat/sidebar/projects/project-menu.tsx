@@ -289,9 +289,7 @@ export function ProjectMenu({
       </PopoverContent>
       <ConfirmDialog
         confirmLabel={p.menuDelete}
-        description={
-          childCount > 0 ? `${p.deleteConfirm} ${p.deleteSubprojectsNote(childCount)}` : p.deleteConfirm
-        }
+        description={childCount > 0 ? `${p.deleteConfirm} ${p.deleteSubprojectsNote(childCount)}` : p.deleteConfirm}
         destructive
         onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={confirmDelete}

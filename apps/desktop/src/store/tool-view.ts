@@ -20,9 +20,7 @@ export const $toolViewMode = atom<ToolViewMode>(
 )
 export const $toolDisclosureStates = atom<ToolDisclosureStates>(loadToolDisclosureStates())
 
-const disclosureOpenCache = new BoundedMap<string, ReadableAtom<boolean | undefined>>(
-  MAX_TOOL_DISCLOSURES
-)
+const disclosureOpenCache = new BoundedMap<string, ReadableAtom<boolean | undefined>>(MAX_TOOL_DISCLOSURES)
 
 $toolViewMode.subscribe(mode => persistBoolean(TOOL_VIEW_TECHNICAL_STORAGE_KEY, mode === 'technical'))
 $toolDisclosureStates.subscribe(persistToolDisclosureStates)

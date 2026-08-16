@@ -14,7 +14,10 @@ import { messageContentText } from '@/components/assistant-ui/thread/content'
 
 describe('messageContentText memo', () => {
   it('returns a stable value for the same content array', () => {
-    const content = [{ text: 'hello ', type: 'text' }, { text: 'world', type: 'text' }]
+    const content = [
+      { text: 'hello ', type: 'text' },
+      { text: 'world', type: 'text' }
+    ]
 
     expect(messageContentText(content)).toBe('hello world')
     expect(messageContentText(content)).toBe('hello world')
@@ -131,9 +134,7 @@ describe('thread timeline caches scroll offsets', () => {
   //
   // Removing the cache changes no behaviour, only speed, so nothing else fails.
   const source = () =>
-    import('node:fs').then(fs =>
-      fs.readFileSync('src/components/assistant-ui/thread/timeline.tsx', 'utf8')
-    )
+    import('node:fs').then(fs => fs.readFileSync('src/components/assistant-ui/thread/timeline.tsx', 'utf8'))
 
   it('does not query per entry inside the scroll handler', async () => {
     const src = await source()
@@ -148,17 +149,13 @@ describe('thread timeline caches scroll offsets', () => {
     // The per-frame offsets must be derived from the cache by arithmetic, not
     // re-measured. (`CSS.escape` still appears in the file for the click-to-jump
     // handler, which runs once per click — that one is fine.)
-    expect(
-      src.includes('cachedTops.map'),
-      'the scroll handler no longer derives offsets from the cache.'
-    ).toBe(true)
+    expect(src.includes('cachedTops.map'), 'the scroll handler no longer derives offsets from the cache.').toBe(true)
 
     const compute = src.slice(src.indexOf('const compute = ()'), src.indexOf('const onScroll = ()'))
 
     expect(
       compute.includes('querySelector'),
-      'the scroll compute path queries the DOM again — that is the per-frame ' +
-        'lookup the cache exists to avoid.'
+      'the scroll compute path queries the DOM again — that is the per-frame ' + 'lookup the cache exists to avoid.'
     ).toBe(false)
   })
 
@@ -175,8 +172,7 @@ describe('thread timeline caches scroll offsets', () => {
 
     expect(
       src.includes("dataset.following === 'true'"),
-      'the streaming fast path is gone — the tracker would now do work on every ' +
-        'flush while pinned to the bottom.'
+      'the streaming fast path is gone — the tracker would now do work on every ' + 'flush while pinned to the bottom.'
     ).toBe(true)
   })
 })
@@ -187,18 +183,11 @@ describe('artifacts page fetches a column projection', () => {
 
     // messageText reads `content`; collectArtifactsFromMessage also reads
     // tool_calls and role; the record carries timestamp. Nothing else.
-    expect([...ARTIFACT_MESSAGE_FIELDS].sort()).toEqual([
-      'content',
-      'role',
-      'timestamp',
-      'tool_calls'
-    ])
+    expect([...ARTIFACT_MESSAGE_FIELDS].sort()).toEqual(['content', 'role', 'timestamp', 'tool_calls'])
   })
 
   it('the artifacts page passes the projection to getSessionMessages', async () => {
-    const source = await import('node:fs').then(fs =>
-      fs.readFileSync('src/app/artifacts/index.tsx', 'utf8')
-    )
+    const source = await import('node:fs').then(fs => fs.readFileSync('src/app/artifacts/index.tsx', 'utf8'))
 
     expect(
       source.includes('ARTIFACT_MESSAGE_FIELDS'),
@@ -223,8 +212,7 @@ describe('use-stick-to-bottom patch (scroll getComputedStyle)', () => {
   // (node_modules is gitignored), reapplied by the root postinstall. If either
   // the patch file or the postinstall wiring is lost on a merge, scroll jank
   // returns silently — nothing else fails. Hence these guards.
-  const readRoot = (rel: string) =>
-    import('node:fs').then(fs => fs.readFileSync(`../../${rel}`, 'utf8'))
+  const readRoot = (rel: string) => import('node:fs').then(fs => fs.readFileSync(`../../${rel}`, 'utf8'))
 
   it('the patch file exists and covers both getComputedStyle sites', async () => {
     const patch = await readRoot('patches/use-stick-to-bottom+1.1.6.patch').catch(() => '')

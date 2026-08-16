@@ -45,10 +45,7 @@ test('canonicalGitHubRemote normalizes SSH and HTTPS forms to the same value', (
 test('canonicalGitHubRemote does not map upstream onto this fork', () => {
   // FORK guard: upstream must canonicalize to something else entirely, or an
   // upstream-pointed install would be treated as ours.
-  assert.notEqual(
-    canonicalGitHubRemote('git@github.com:NousResearch/hermes-agent.git'),
-    OFFICIAL_REPO_CANONICAL
-  )
+  assert.notEqual(canonicalGitHubRemote('git@github.com:NousResearch/hermes-agent.git'), OFFICIAL_REPO_CANONICAL)
 })
 
 test('canonicalGitHubRemote is empty for falsy input', () => {

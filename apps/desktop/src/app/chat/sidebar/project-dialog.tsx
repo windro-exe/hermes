@@ -280,13 +280,7 @@ export function ProjectDialog() {
               </ul>
             )}
             <div className="flex items-center gap-1">
-              <Button
-                disabled={submitting}
-                onClick={() => void pickFolder()}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
+              <Button disabled={submitting} onClick={() => void pickFolder()} size="sm" type="button" variant="ghost">
                 <Codicon name="add" size="0.75rem" />
                 {p.addFolder}
               </Button>
@@ -305,9 +299,7 @@ export function ProjectDialog() {
                   From GitHub
                 </Button>
               )}
-              {cloning && (
-                <span className="text-[0.6875rem] text-(--ui-text-tertiary)">Cloning…</span>
-              )}
+              {cloning && <span className="text-[0.6875rem] text-(--ui-text-tertiary)">Cloning…</span>}
             </div>
             {showGitHub && (
               <GitHubRepoPicker

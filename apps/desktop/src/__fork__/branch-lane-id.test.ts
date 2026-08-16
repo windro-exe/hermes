@@ -25,13 +25,9 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  branchLaneId,
-  DEFAULT_BRANCH_LABEL,
-  overlayRepoLanes
-} from '@/app/chat/sidebar/projects/workspace-groups'
+import { branchLaneId, DEFAULT_BRANCH_LABEL, overlayRepoLanes } from '@/app/chat/sidebar/projects/workspace-groups'
 import type { SidebarSessionGroup, SidebarWorkspaceTree } from '@/app/chat/sidebar/projects/workspace-groups'
- import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/hermes'
 
 const REPO = 'C:\\Users\\me\\Documents\\Asthra HR admin'
 
@@ -85,19 +81,17 @@ describe('a session never renders under two lanes', () => {
 
   it('reuses a branch-keyed main lane when the backend resolved the repo', () => {
     // With a real repo the backend emits `<root>::branch::main`.
-    const lanes = lanesFor(
-      repoWith({ id: branchLaneId(REPO, DEFAULT_BRANCH_LABEL), label: DEFAULT_BRANCH_LABEL }),
-      [session()]
-    )
+    const lanes = lanesFor(repoWith({ id: branchLaneId(REPO, DEFAULT_BRANCH_LABEL), label: DEFAULT_BRANCH_LABEL }), [
+      session()
+    ])
 
     expect(lanes.length).toBe(1)
   })
 
   it('reuses the lane for a session with a real branch', () => {
-    const lanes = lanesFor(
-      repoWith({ id: branchLaneId(REPO, 'main'), label: 'main' }),
-      [session({ git_branch: 'main' })]
-    )
+    const lanes = lanesFor(repoWith({ id: branchLaneId(REPO, 'main'), label: 'main' }), [
+      session({ git_branch: 'main' })
+    ])
 
     expect(lanes.length).toBe(1)
   })
@@ -117,10 +111,7 @@ describe('a session never renders under two lanes', () => {
     const lanes = lanesFor(repo, [session({ git_branch: 'feature/x', id: 'on-feature' })])
     const byLabel = new Map(lanes.map(g => [g.label, g.sessions.map(s => s.id)]))
 
-    expect([...byLabel.keys()].sort(), 'a feature branch must get its own lane').toEqual([
-      'feature/x',
-      'main'
-    ])
+    expect([...byLabel.keys()].sort(), 'a feature branch must get its own lane').toEqual(['feature/x', 'main'])
     expect(byLabel.get('main')).toEqual(['on-main'])
     expect(byLabel.get('feature/x')).toEqual(['on-feature'])
   })

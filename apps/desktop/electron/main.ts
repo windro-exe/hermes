@@ -8175,9 +8175,9 @@ async function startHermes() {
           HERMES_HOME,
           ...backend.env,
           TERMINAL_CWD: hermesCwd,
-        // Connected GitHub account -> the agent's only GitHub credential.
-        // Spread AFTER the base env so a stale inherited GITHUB_TOKEN cannot win.
-        ...githubAgentEnv(),
+          // Connected GitHub account -> the agent's only GitHub credential.
+          // Spread AFTER the base env so a stale inherited GITHUB_TOKEN cannot win.
+          ...githubAgentEnv(),
           HERMES_DASHBOARD_SESSION_TOKEN: token,
           // Marks this dashboard backend as desktop-spawned so it runs the cron
           // scheduler tick loop (the gateway isn't running under the app).

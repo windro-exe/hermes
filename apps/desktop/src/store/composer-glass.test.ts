@@ -58,9 +58,7 @@ describe('composerGlassVars', () => {
     for (const level of [0, 10, 30, 60, 100]) {
       const vars = composerGlassVars(level)
 
-      expect(Number.parseFloat(vars.strengthScrolled)).toBeLessThanOrEqual(
-        Number.parseFloat(vars.strength)
-      )
+      expect(Number.parseFloat(vars.strengthScrolled)).toBeLessThanOrEqual(Number.parseFloat(vars.strength))
     }
   })
 
@@ -83,9 +81,7 @@ describe('applyComposerGlass', () => {
 
     applyComposerGlass(70, root)
 
-    expect(root.style.getPropertyValue('--composer-fill-strength')).toBe(
-      composerGlassVars(70).strength
-    )
+    expect(root.style.getPropertyValue('--composer-fill-strength')).toBe(composerGlassVars(70).strength)
     expect(root.style.getPropertyValue('--composer-fill-strength-scrolled')).toBe(
       composerGlassVars(70).strengthScrolled
     )

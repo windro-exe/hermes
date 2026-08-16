@@ -85,9 +85,7 @@ describe('the token never reaches the renderer', () => {
     const main = source('electron/main.ts')
 
     expect(main).toContain('_githubTokenPath')
-    expect(main, 'the GitHub token is written without encryptDesktopSecret').toMatch(
-      /encryptDesktopSecret\(token\)/
-    )
+    expect(main, 'the GitHub token is written without encryptDesktopSecret').toMatch(/encryptDesktopSecret\(token\)/)
     // Scoped to the writer rather than a byte-distance guess, which was brittle.
     const writer = main.slice(main.indexOf('function _writeGithubToken'))
     const body = writer.slice(0, writer.indexOf('\n}'))

@@ -31,6 +31,7 @@ import {
   type SidebarWorkspaceTree
 } from './workspace-groups'
 import { WorkspaceAddButton, WorkspaceHeader } from './workspace-header'
+import { lookupRepoWorktrees } from './worktree-lookup'
 
 // The entered project's body. Main-checkout sessions render directly — no
 // redundant repo/branch header (the breadcrumb already names the project). Only
@@ -61,7 +62,7 @@ export function EnteredProjectContent({
     <>
       {project.repos.map(repo => (
         <RepoFlatSection
-          discoveredWorktrees={repo.path ? repoWorktrees?.[repo.path] : undefined}
+          discoveredWorktrees={lookupRepoWorktrees(repoWorktrees, repo.path)}
           key={repo.id}
           liveSessions={liveSessions}
           onNewSession={onNewSession}

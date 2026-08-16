@@ -107,8 +107,16 @@ const comparisonSegments = (path: string): string[] => {
   return isWindowsPath(path) ? segs.map(seg => seg.toLowerCase()) : segs
 }
 
-/** Canonical per-host comparison key (separator/case/trailing-slash agnostic). */
-const pathKey = (path: null | string | undefined): string => comparisonSegments(path ?? '').join('/')
+/**
+ * Canonical per-host comparison key (separator/case/trailing-slash agnostic).
+ *
+ * Exported for the worktree-probe map: `git worktree list --porcelain` emits
+ * POSIX separators even on Windows (`C:/wnx-projects/...`), while `repo.path`
+ * and every session row carry native backslashes. Indexing that map with a raw
+ * path string therefore missed, which silently disabled the home-lane fold —
+ * see the FORK note in `mergeRepoWorktreeGroups`.
+ */
+export const pathKey = (path: null | string | undefined): string => comparisonSegments(path ?? '').join('/')
 
 /** Last path segment. */
 export const baseName = (path: string): string | undefined => segments(path).pop()

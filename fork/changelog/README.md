@@ -118,6 +118,7 @@ Newest first. `Superseded by` means read the newer entry instead.
 
 | Date | Type | Entry | Status |
 |---|---|---|---|
+| 2026-08-16 | Fixed | [One repo showed a lane per branch its sessions were ever created on](entries/2026-08-16-01-sidebar-duplicate-branch-lanes.md) | `git worktree list` prints POSIX separators on Windows, so the probe map was keyed with `C:/...` while the lookup used `C:\\...`; the miss disabled the home-lane fold |
 | 2026-08-15 | Added | [A dev build: this checkout's code against a live-safe copy of production data](entries/2026-08-15-01-dev-build-snapshot.md) | current |
 | 2026-08-14 | Fixed | [The last three CI failures: exact-argv test doubles, and a guard the mocks tripped](entries/2026-08-14-04-ci-green-exact-argv-tests.md) | current |
 | 2026-08-14 | Fixed | [A swallowed TypeError meant session rows were never written, and CI stayed red](entries/2026-08-14-03-tui-gateway-server-tests.md) | current |
